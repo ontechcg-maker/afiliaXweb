@@ -23,17 +23,26 @@ const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
 // ─── Supabase Clients ────────────────────────────────────────────
-// Cliente anon: usado para verificar JWT dos usuários
-const supabaseAnon = SUPABASE_URL && SUPABASE_ANON_KEY
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null
+let supabaseAnon = null
+let supabaseAdmin = null
 
-// Cliente admin (service role): bypassa RLS — usado apenas no scheduler server-side
-const supabaseAdmin = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
-  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+try {
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  }
+} catch (e) {
+  console.error('[Supabase Anon Client] Erro de inicialização:', e.message)
+}
+
+try {
+  if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     })
-  : null
+  }
+} catch (e) {
+  console.error('[Supabase Admin Client] Erro de inicialização:', e.message)
+}
 
 // ─── App Express ─────────────────────────────────────────────────
 const app = express()
