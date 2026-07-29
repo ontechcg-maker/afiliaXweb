@@ -101,15 +101,14 @@ export function formatCustomTemplate(template: string, product: ProductData): st
 
 function buildPrompt(product: ProductData, tone: CopyTone | string): string {
   const toneInstructions = TONE_PROMPTS[tone as CopyTone] || tone
-  return `Escreva UMA MENSAGEM DIRETA de vendas de afiliados para WhatsApp em português do Brasil.
-
-PROIBIDO: NÃO escreva palavras em inglês como "Result:", "Scarcity:", "Proof:", "Hook:", "Drafting:", "Constraints:". Escreva APENAS o texto corrido da mensagem.
+  return `ATENÇÃO E REGRA ABSOLUTA: Responda DIRETA E EXCLUSIVAMENTE com a mensagem pronta de divulgação para o WhatsApp em português do Brasil.
+PROIBIDO incluir raciocínio, explicações ("The user wants...", "Constraints:", "Challenge:"), tags de pensamento (<think>), rascunhos ou rótulos em inglês.
 
 Diretrizes da Mensagem:
 - Tamanho: 40 a 80 palavras (escaneável em 10 segundos).
 - Venda o Resultado e a Transformação prática do produto.
 - Formatação WhatsApp: Use *negrito* em preços promocionais e nomes, ~riscado~ em preços antigos.
-- CTA no final: Termine exatamente com a chamada e o link na última linha.
+- CTA no final: Termine exatamente com a chamada de ação e o link na última linha.
 
 Abordagem Desejada / Instruções do Modelo:
 ${toneInstructions}
@@ -125,34 +124,49 @@ MENSAGEM FINAL PRONTA PARA O WHATSAPP:`
 }
 
 /**
- * Remove qualquer palavra ou rótulo de raciocínio de IA (Result:, Scarcity/Proof:, Hook:, etc.)
+ * Remove qualquer palavra, raciocínio interno ou rótulo de IA (The user wants..., <think>, Result:, etc.)
  */
 export function cleanCopyOutput(rawText: string): string {
   let cleaned = rawText.trim()
 
-  // 1. Remove rótulos em inglês que a IA às vezes inclui no corpo da mensagem
+  // 1. Remove qualquer bloco <think>...</think> (DeepSeek R1 / Reasoning Models)
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
+
+  // 2. Se contiver preâmbulo de raciocínio da IA em inglês ("The user wants...", "Constraints:", "Challenge:")
+  if (/The user wants|Constraints:|Challenge:|Drafting process/i.test(cleaned)) {
+    const emojiMatch = cleaned.match(/(?:[🔥🚨👀⭐💥💰⚡😈😂✅👉🛒📦😍]|(?:\*[^*]+\*))/su)
+    if (emojiMatch && emojiMatch.index !== undefined && emojiMatch.index > 0) {
+      cleaned = cleaned.substring(emojiMatch.index).trim()
+    } else {
+      cleaned = cleaned
+        .replace(/^The user wants[\s\S]*?(?:Drafting strategy|Mental check|Copy:|MENSAGEM:)\s*/i, '')
+        .replace(/(?:Constraints|Challenge|Style|Product|Prices|Link):\s*.*$/gm, '')
+        .trim()
+    }
+  }
+
+  // 3. Remove rótulos em inglês no corpo da mensagem
   cleaned = cleaned
     .replace(/(?:Result|Scarcity\/Proof|Scarcity|Proof|Hook|Curiosity|Benefit|Offer|CTA):\s*/gi, '')
     .replace(/^Subject:\s*/gi, '')
     .replace(/^Title:\s*/gi, '')
     .trim()
 
-  // 2. Localiza a primeira ocorrência de emoji de início de mensagem
+  // 4. Localiza a primeira ocorrência de emoji se ainda houver texto sujo antes
   const emojiIndex = cleaned.search(/(?:👀|🔥|⭐|💥|🚨|💰|⚡|😈|😂|✅|👉|🛒|📦|😍)/)
-  if (emojiIndex !== -1 && emojiIndex < 120) {
-    cleaned = cleaned.substring(emojiIndex)
+  if (emojiIndex > 0 && emojiIndex < 200) {
+    cleaned = cleaned.substring(emojiIndex).trim()
   }
 
-  // 3. Remove seções finais de "Word count check" ou "Mental check"
+  // 5. Remove seções finais de "Word count check" ou "Mental check"
   const endCheckIndex = cleaned.search(/(?:Word count check|Mental Check|Drafting check|Portuguese words)/i)
   if (endCheckIndex !== -1) {
-    cleaned = cleaned.substring(0, endCheckIndex)
+    cleaned = cleaned.substring(0, endCheckIndex).trim()
   }
 
-  // 4. Limpeza final de cabeçalhos genéricos
+  // 6. Limpeza final de cabeçalhos genéricos
   cleaned = cleaned
-    .replace(/^The user wants[\s\S]*?(Drafting the copy|\(Mental Check\)|Drafting strategy):\s*/i, '')
-    .replace(/^(Aqui está|Segue a copy|Copy gerada)[\s\S]*?:\n*/i, '')
+    .replace(/^(Aqui está|Segue a copy|Copy gerada|Mensagem gerada)[\s\S]*?:\n*/i, '')
     .trim()
 
   return cleaned

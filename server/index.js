@@ -422,6 +422,54 @@ router.post('/fetch-html', requireAuth, async (req, res) => {
   }
 })
 
+// Helper para remover raciocínio interno/chain-of-thought de modelos de IA
+function cleanCopyText(rawText) {
+  if (!rawText) return ''
+  let cleaned = String(rawText).trim()
+
+  // 1. Remove tags de pensamento <think>...</think> (DeepSeek R1 / Reasoning Models)
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
+
+  // 2. Se a resposta contiver préambulo em inglês ("The user wants...", "Constraints:", "Challenge:"), limpa até o texto em português
+  if (/The user wants|Constraints:|Challenge:|Drafting process/i.test(cleaned)) {
+    const emojiMatch = cleaned.match(/(?:[🔥🚨👀⭐💥💰⚡😈😂✅👉🛒📦😍]|(?:\*[^*]+\*))/su)
+    if (emojiMatch && emojiMatch.index !== undefined && emojiMatch.index > 0) {
+      cleaned = cleaned.substring(emojiMatch.index).trim()
+    } else {
+      cleaned = cleaned
+        .replace(/^The user wants[\s\S]*?(?:Drafting strategy|Mental check|Copy:|MENSAGEM:)\s*/i, '')
+        .replace(/(?:Constraints|Challenge|Style|Product|Prices|Link):\s*.*$/gm, '')
+        .trim()
+    }
+  }
+
+  // 3. Remove rótulos residuais de IA
+  cleaned = cleaned
+    .replace(/(?:Result|Scarcity\/Proof|Scarcity|Proof|Hook|Curiosity|Benefit|Offer|CTA):\s*/gi, '')
+    .replace(/^Subject:\s*/gi, '')
+    .replace(/^Title:\s*/gi, '')
+    .trim()
+
+  // 4. Se ainda tiver sujeira no início antes do primeiro emoji de WhatsApp
+  const emojiIndex = cleaned.search(/(?:👀|🔥|⭐|💥|🚨|💰|⚡|😈|😂|✅|👉|🛒|📦|😍)/)
+  if (emojiIndex > 0 && emojiIndex < 200) {
+    cleaned = cleaned.substring(emojiIndex).trim()
+  }
+
+  // 5. Remove rodapés de checagem
+  const endCheckIndex = cleaned.search(/(?:Word count check|Mental Check|Drafting check|Portuguese words)/i)
+  if (endCheckIndex !== -1) {
+    cleaned = cleaned.substring(0, endCheckIndex).trim()
+  }
+
+  // 6. Cabeçalhos genéricos
+  cleaned = cleaned
+    .replace(/^(Aqui está|Segue a copy|Copy gerada|Mensagem gerada)[\s\S]*?:\n*/i, '')
+    .trim()
+
+  return cleaned
+}
+
 // ─── Rota de Geração de Copy via IA (Centralizada no Backend do SaaS) ───
 router.post('/generate-copy', requireAuth, async (req, res) => {
   const { prompt } = req.body || {}
@@ -448,7 +496,7 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
       })
       const data = await response.json()
       if (response.ok && data.choices?.[0]?.message?.content) {
-        return res.json({ copy: data.choices[0].message.content })
+        return res.json({ copy: cleanCopyText(data.choices[0].message.content) })
       }
       if (data.error?.message) {
         throw new Error(`Erro na OpenAI (${targetModel}): ${data.error.message}`)
@@ -471,7 +519,7 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
       )
       const data = await response.json()
       if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        return res.json({ copy: data.candidates[0].content.parts[0].text })
+        return res.json({ copy: cleanCopyText(data.candidates[0].content.parts[0].text) })
       }
     }
 
@@ -498,7 +546,7 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
     })
     const data = await response.json()
     if (response.ok && data.choices?.[0]?.message?.content) {
-      return res.json({ copy: data.choices[0].message.content })
+      return res.json({ copy: cleanCopyText(data.choices[0].message.content) })
     }
 
     if (data.error?.message) {
