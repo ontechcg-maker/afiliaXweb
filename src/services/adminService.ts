@@ -14,6 +14,7 @@ export interface AdminUser {
   instance_status: 'disconnected' | 'connecting' | 'connected'
   whatsapp_number?: string
   role?: string
+  plan_tier?: 'free' | 'pro' | 'agency'
   is_blocked?: boolean
   created_at: string
   offers_count?: number
@@ -60,6 +61,14 @@ export async function setUserRole(userId: string, role: string): Promise<void> {
   await adminApiCall('/set-role', {
     method: 'POST',
     body: JSON.stringify({ userId, role }),
+  })
+}
+
+/** Altera o plano SaaS de um usuário (free | pro | agency) */
+export async function setUserPlanTier(userId: string, planTier: string): Promise<void> {
+  await adminApiCall('/set-plan', {
+    method: 'POST',
+    body: JSON.stringify({ userId, planTier }),
   })
 }
 

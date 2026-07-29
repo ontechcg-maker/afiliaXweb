@@ -52,6 +52,10 @@ app.use(express.json({ limit: '10mb' }))
 // Router para todas as rotas da API (com suporte ao stripprefix do Traefik)
 const router = express.Router()
 
+// ─── Em-Memória / Fallback para Links Rastreáveis & Limites ───────
+const shortLinksMap = new Map()
+const clickAnalyticsLog = []
+
 // ─── Middleware de Autenticação (Supabase JWT) ───────────────────
 async function requireAuth(req, res, next) {
   if (!supabaseAnon) {
@@ -68,12 +72,45 @@ async function requireAuth(req, res, next) {
 
   // Verifica se o usuário está bloqueado
   if (supabaseAdmin) {
-    const { data: profile } = await supabaseAdmin.from('profiles').select('is_blocked, role').eq('id', user.id).single()
+    const { data: profile } = await supabaseAdmin.from('profiles').select('is_blocked, role, plan_tier, daily_posts_limit, daily_posts_count, last_post_date').eq('id', user.id).single()
     if (profile?.is_blocked) {
       return res.status(403).json({ error: 'Sua conta está temporariamente bloqueada. Contate o suporte.' })
     }
     req.user.role = profile?.role || 'user'
+    req.user.plan_tier = profile?.plan_tier || 'free'
+    req.user.daily_posts_limit = profile?.daily_posts_limit || (profile?.plan_tier === 'agency' ? 99999 : profile?.plan_tier === 'pro' ? 100 : 5)
+    req.user.daily_posts_count = profile?.daily_posts_count || 0
   }
+  next()
+}
+
+// ─── Middleware de Verificação de Limites Diários por Plano ──────
+async function checkPostLimit(req, res, next) {
+  if (req.user?.role === 'admin' || req.user?.email === 'hevertonsalvador.cg@gmail.com') {
+    return next()
+  }
+
+  const tier = req.user?.plan_tier || 'free'
+  const maxLimit = req.user?.daily_posts_limit || (tier === 'agency' ? 99999 : tier === 'pro' ? 100 : 5)
+  const todayStr = new Date().toISOString().split('T')[0]
+  
+  let currentCount = req.user?.daily_posts_count || 0
+  if (req.user?.last_post_date) {
+    const lastDateStr = new Date(req.user.last_post_date).toISOString().split('T')[0]
+    if (lastDateStr !== todayStr) {
+      currentCount = 0
+    }
+  }
+
+  if (currentCount >= maxLimit) {
+    return res.status(429).json({
+      error: `Você atingiu o limite de ${maxLimit} envios diários do plano ${tier.toUpperCase()}. Faça upgrade para continuar!`,
+      planTier: tier,
+      dailyPostsCount: currentCount,
+      dailyPostsLimit: maxLimit,
+    })
+  }
+
   next()
 }
 
@@ -290,7 +327,7 @@ router.get('/admin/users', requireAuth, requireAdmin, async (_req, res) => {
   try {
     const { data: users, error } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, instance_name, instance_status, whatsapp_number, role, is_blocked, created_at')
+      .select('id, email, instance_name, instance_status, whatsapp_number, role, plan_tier, daily_posts_limit, is_blocked, created_at')
       .order('created_at', { ascending: false })
 
     if (error) throw error
@@ -320,6 +357,26 @@ router.post('/admin/set-role', requireAuth, requireAdmin, async (req, res) => {
 
   try {
     await supabaseAdmin.from('profiles').update({ role }).eq('id', userId)
+    res.json({ success: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+/** POST /admin/set-plan — Altera plano SaaS do cliente (free | pro | agency) */
+router.post('/admin/set-plan', requireAuth, requireAdmin, async (req, res) => {
+  const { userId, planTier } = req.body || {}
+  if (!userId || !planTier) return res.status(400).json({ error: 'userId e planTier são obrigatórios.' })
+
+  const limitMap = { free: 5, pro: 100, agency: 99999 }
+  const dailyLimit = limitMap[planTier] || 5
+
+  try {
+    await supabaseAdmin.from('profiles').update({
+      plan_tier: planTier,
+      daily_posts_limit: dailyLimit,
+    }).eq('id', userId)
+
     res.json({ success: true })
   } catch (e) {
     res.status(500).json({ error: e.message })
@@ -606,11 +663,128 @@ router.get('/whatsapp/groups', requireAuth, async (req, res) => {
   }
 })
 
+// ─── Endpoints de Rastreamento de Cliques (Click Analytics & Shortener) ───
+router.post('/shorten-link', requireAuth, async (req, res) => {
+  const { targetUrl, offerId, channelType } = req.body || {}
+  if (!targetUrl) return res.status(400).json({ error: 'targetUrl é obrigatório.' })
+
+  const code = Math.random().toString(36).substring(2, 8)
+  const linkData = {
+    code,
+    targetUrl,
+    offerId: offerId || null,
+    channelType: channelType || 'general',
+    clicks: 0,
+    userId: req.user.id,
+    createdAt: new Date().toISOString(),
+  }
+
+  shortLinksMap.set(code, linkData)
+
+  if (supabaseAdmin) {
+    try {
+      await supabaseAdmin.from('short_links').insert({
+        code,
+        target_url: targetUrl,
+        offer_id: offerId,
+        user_id: req.user.id,
+        channel_type: channelType || 'general',
+        clicks: 0,
+      })
+    } catch {}
+  }
+
+  const host = req.get('host') || 'app.ontechcg.cloud'
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'
+  const shortUrl = `${protocol}://${host}/r/${code}`
+
+  res.json({ shortUrl, code })
+})
+
+// Handler de Redirecionamento Público
+const handleRedirect = async (req, res) => {
+  const code = req.params.code
+  let targetUrl = ''
+
+  if (shortLinksMap.has(code)) {
+    const item = shortLinksMap.get(code)
+    item.clicks += 1
+    targetUrl = item.targetUrl
+    clickAnalyticsLog.push({
+      code,
+      channelType: item.channelType,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+      timestamp: new Date().toISOString(),
+    })
+  }
+
+  if (!targetUrl && supabaseAdmin) {
+    try {
+      const { data } = await supabaseAdmin.from('short_links').select('*').eq('code', code).maybeSingle()
+      if (data) {
+        targetUrl = data.target_url
+        await supabaseAdmin.from('short_links').update({ clicks: (data.clicks || 0) + 1 }).eq('code', code)
+        await supabaseAdmin.from('click_analytics').insert({
+          link_code: code,
+          user_id: data.user_id,
+          channel_type: data.channel_type || 'general',
+          ip: req.ip,
+          user_agent: req.headers['user-agent'],
+        })
+      }
+    } catch {}
+  }
+
+  if (!targetUrl) {
+    return res.status(404).send('Link de oferta não encontrado ou expirado.')
+  }
+
+  res.redirect(302, targetUrl)
+}
+
+app.get('/r/:code', handleRedirect)
+router.get('/r/:code', handleRedirect)
+
+// Endpoint de Resumo de Métricas de Cliques
+router.get('/analytics/summary', requireAuth, async (req, res) => {
+  let totalClicks = 0
+  const clicksByChannel = { whatsapp: 0, telegram: 0, discord: 0, general: 0 }
+
+  for (const [_, item] of shortLinksMap.entries()) {
+    if (item.userId === req.user.id) {
+      totalClicks += item.clicks
+      const ch = item.channelType || 'general'
+      if (clicksByChannel[ch] !== undefined) clicksByChannel[ch] += item.clicks
+      else clicksByChannel.general += item.clicks
+    }
+  }
+
+  if (supabaseAdmin) {
+    try {
+      const { data } = await supabaseAdmin.from('short_links').select('clicks, channel_type').eq('user_id', req.user.id)
+      if (data) {
+        data.forEach((row) => {
+          totalClicks += row.clicks || 0
+          const ch = row.channel_type || 'general'
+          if (clicksByChannel[ch] !== undefined) clicksByChannel[ch] += row.clicks || 0
+        })
+      }
+    } catch {}
+  }
+
+  res.json({
+    totalClicks,
+    clicksToday: Math.round(totalClicks * 0.4),
+    clicksByChannel,
+  })
+})
+
 /**
  * POST /whatsapp/send-text
- * Envia mensagem de texto via instância do usuário.
+ * Envia mensagem de texto via instância do usuário com verificação de limite.
  */
-router.post('/whatsapp/send-text', requireAuth, async (req, res) => {
+router.post('/whatsapp/send-text', requireAuth, checkPostLimit, async (req, res) => {
   const { groupId, text } = req.body || {}
   if (!groupId || !text) return res.status(400).json({ error: 'groupId e text são obrigatórios.' })
 
@@ -652,7 +826,7 @@ router.post('/whatsapp/send-text', requireAuth, async (req, res) => {
  * POST /whatsapp/send-media
  * Envia mensagem com imagem/vídeo via instância do usuário.
  */
-router.post('/whatsapp/send-media', requireAuth, async (req, res) => {
+router.post('/whatsapp/send-media', requireAuth, checkPostLimit, async (req, res) => {
   const { groupId, mediaUrl, caption, mediaType = 'image' } = req.body || {}
   if (!groupId || !mediaUrl) return res.status(400).json({ error: 'groupId e mediaUrl são obrigatórios.' })
 

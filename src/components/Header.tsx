@@ -1,4 +1,4 @@
-import { Bell, Bot, LogOut, Sun, Moon } from 'lucide-react'
+import { Bell, Bot, LogOut, Sun, Moon, Crown, Zap } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { logout } from '../services/authService'
 
@@ -13,7 +13,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
 }
 
 export default function Header() {
-  const { activeTab, settings, saasAiInfo, setAuthenticated, theme, toggleTheme } = useApp()
+  const { activeTab, settings, saasAiInfo, setAuthenticated, theme, toggleTheme, userProfile } = useApp()
   const page = PAGE_TITLES[activeTab] || { title: activeTab, subtitle: '' }
   
   const provider = saasAiInfo?.provider || settings.ai.provider || 'gemini'
@@ -30,6 +30,9 @@ export default function Header() {
   } else if (provider === 'ollama') {
     aiLabel = 'Ollama (Local)'
   }
+
+  const userPlan = userProfile?.role === 'admin' ? 'ADMIN' : ((userProfile as any)?.plan_tier || 'FREE').toUpperCase()
+  const planColor = userPlan === 'ADMIN' ? '#6366f1' : userPlan === 'AGENCY' ? '#eab308' : userPlan === 'PRO' ? '#22c55e' : '#a3a3a3'
 
   const handleLogout = () => {
     logout()
@@ -56,6 +59,29 @@ export default function Header() {
           {page.title}
         </h1>
         <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>{page.subtitle}</p>
+      </div>
+
+      {/* Plan Badge */}
+      <div
+        title={`Seu Plano Atual: ${userPlan}`}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '4px 10px',
+          borderRadius: 8,
+          background: `${planColor}15`,
+          border: `1px solid ${planColor}30`,
+        }}
+      >
+        {userPlan === 'ADMIN' || userPlan === 'AGENCY' ? (
+          <Crown size={13} color={planColor} />
+        ) : (
+          <Zap size={13} color={planColor} />
+        )}
+        <span style={{ fontSize: 11, color: planColor, fontWeight: 700, letterSpacing: '0.04em' }}>
+          {userPlan}
+        </span>
       </div>
 
       {/* AI Provider Badge */}

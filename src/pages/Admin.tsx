@@ -19,6 +19,7 @@ import {
   getAdminUsers,
   toggleBlockUser,
   setUserRole,
+  setUserPlanTier,
   getAdminSystemConfig,
   saveAdminSystemConfig,
   type AdminStats,
@@ -162,6 +163,23 @@ export default function Admin() {
       setSuccessMsg(`Permissão de ${targetUser.email} alterada para "${nextRole}".`)
     } catch (e: any) {
       setErrorMsg(e.message || 'Erro ao alterar papel do usuário.')
+    } finally {
+      setActionLoadingId(null)
+    }
+  }
+
+  const handlePlanChange = async (targetUser: AdminUser, newPlan: string) => {
+    setActionLoadingId(targetUser.id)
+    setErrorMsg(null)
+    setSuccessMsg(null)
+    try {
+      await setUserPlanTier(targetUser.id, newPlan)
+      setUsersList((prev) =>
+        prev.map((u) => (u.id === targetUser.id ? { ...u, plan_tier: newPlan as any } : u))
+      )
+      setSuccessMsg(`Plano de ${targetUser.email} alterado para "${newPlan.toUpperCase()}".`)
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Erro ao alterar plano do usuário.')
     } finally {
       setActionLoadingId(null)
     }
@@ -545,6 +563,7 @@ export default function Admin() {
                   <th style={{ padding: '12px 14px' }}>Cliente</th>
                   <th style={{ padding: '12px 14px' }}>Instância WhatsApp</th>
                   <th style={{ padding: '12px 14px' }}>Status Conexão</th>
+                  <th style={{ padding: '12px 14px' }}>Plano SaaS</th>
                   <th style={{ padding: '12px 14px' }}>Papel</th>
                   <th style={{ padding: '12px 14px' }}>Data Cadastro</th>
                   <th style={{ padding: '12px 14px', textAlign: 'right' }}>Ações</th>
@@ -556,6 +575,7 @@ export default function Admin() {
                   const isConn = u.instance_status === 'connected'
                   const isBlocked = u.is_blocked === true
                   const isActionLoading = actionLoadingId === u.id
+                  const currentPlan = u.plan_tier || 'free'
 
                   return (
                     <tr
@@ -618,6 +638,26 @@ export default function Admin() {
                           {isConn ? <CheckCircle size={12} /> : <XCircle size={12} />}
                           {isConn ? 'Conectado' : 'Desconectado'}
                         </span>
+                      </td>
+
+                      {/* Plano SaaS */}
+                      <td style={{ padding: '12px 14px' }}>
+                        <select
+                          className="input-glass"
+                          value={currentPlan}
+                          disabled={isActionLoading}
+                          onChange={(e) => handlePlanChange(u, e.target.value)}
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: '4px 8px',
+                            color: currentPlan === 'agency' ? '#eab308' : currentPlan === 'pro' ? '#22c55e' : '#a3a3a3',
+                          }}
+                        >
+                          <option value="free" style={{ background: '#111' }}>⚡ FREE (5/dia)</option>
+                          <option value="pro" style={{ background: '#111' }}>🚀 PRO (100/dia)</option>
+                          <option value="agency" style={{ background: '#111' }}>👑 AGENCY (Ilimitado)</option>
+                        </select>
                       </td>
 
                       {/* Papel */}

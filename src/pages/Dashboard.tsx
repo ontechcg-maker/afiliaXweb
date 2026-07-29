@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { Send, Clock, CheckCircle, TrendingUp, Zap, AlertTriangle } from 'lucide-react'
+import { Send, Clock, CheckCircle, TrendingUp, Zap, AlertTriangle, MousePointerClick } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { loadQueue, type ScheduledPost } from '../services/schedulerService'
 import { getGroups } from '../services/whatsappService'
+import { fetchClickAnalyticsSummary } from '../services/linkShortenerService'
 
 function StatCard({
   icon: Icon,
@@ -85,6 +86,7 @@ export default function Dashboard() {
     pendingCount: 0,
     sentThisMonth: 0,
     activeGroups: 0,
+    totalClicks: 0,
   })
 
   const loadDashboardMetrics = async () => {
@@ -115,11 +117,14 @@ export default function Dashboard() {
       activeGroups = groups.length
     } catch {}
 
+    const analytics = await fetchClickAnalyticsSummary()
+
     setStats({
       sentToday,
       pendingCount,
       sentThisMonth,
       activeGroups,
+      totalClicks: analytics.totalClicks || 0,
     })
   }
 
@@ -200,13 +205,20 @@ export default function Dashboard() {
       )}
 
       {/* Stats Grid */}
-      <div style={{ display: 'flex', gap: 16 }}>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <StatCard
           icon={Send}
           label="Ofertas Enviadas Hoje"
           value={stats.sentToday}
           color="#22d3ee"
           subtext={stats.sentToday > 0 ? `${stats.sentToday} disparados hoje` : 'Nenhum disparo hoje'}
+        />
+        <StatCard
+          icon={MousePointerClick}
+          label="Cliques em Links"
+          value={stats.totalClicks}
+          color="#818cf8"
+          subtext={stats.totalClicks > 0 ? `${stats.totalClicks} acessos registrados` : 'Rastreamento ativo'}
         />
         <StatCard
           icon={Clock}
@@ -227,7 +239,7 @@ export default function Dashboard() {
           label="Grupos Ativos"
           value={stats.activeGroups}
           color="#f59e0b"
-          subtext={evolutionConnected ? `${stats.activeGroups} grupos vinculados` : 'Conecte a Evolution API'}
+          subtext={evolutionConnected ? `${stats.activeGroups} grupos vinculados` : 'Conecte o WhatsApp'}
         />
       </div>
 
