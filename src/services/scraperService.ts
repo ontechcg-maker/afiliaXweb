@@ -100,6 +100,7 @@ function extractTitleFromUrlSlug(url: string): string | undefined {
 export async function scrapeProduct(rawUrl: string): Promise<ScrapedProduct> {
   const url = await unshortenUrl(rawUrl)
   const platform = detectPlatform(url)
+  let bestResult: ScrapedProduct | null = null
 
   if (platform === 'mercadolivre') {
     const widMatch = url.match(/wid=(MLB[0-9]+)/i)
@@ -112,8 +113,6 @@ export async function scrapeProduct(rawUrl: string): Promise<ScrapedProduct> {
     if (pMatch) mlIds.push(pMatch[1].replace('-', ''))
 
     const uniqueIds = Array.from(new Set(mlIds))
-
-    let bestResult: ScrapedProduct | null = null
 
     for (const mlId of uniqueIds) {
       try {
@@ -205,11 +204,7 @@ export async function scrapeProduct(rawUrl: string): Promise<ScrapedProduct> {
       }
     }
 
-    if (bestResult) {
-      if (!bestResult.priceTo && bestResult.priceFrom) {
-        bestResult.priceTo = bestResult.priceFrom
-        bestResult.priceFrom = undefined
-      }
+    if (bestResult && bestResult.priceTo) {
       return bestResult
     }
   }
@@ -263,8 +258,8 @@ export async function scrapeProduct(rawUrl: string): Promise<ScrapedProduct> {
           const img = meta.image?.url || meta.logo?.url
           const cleanImg = img?.includes('logo') || img?.includes('handshake') ? undefined : img
           return {
-            title: metaTitle,
-            imageUrl: cleanImg,
+            title: bestResult?.title || metaTitle,
+            imageUrl: bestResult?.imageUrl || cleanImg,
             priceTo: meta.price?.amount || undefined,
             platform,
           }
@@ -275,6 +270,10 @@ export async function scrapeProduct(rawUrl: string): Promise<ScrapedProduct> {
 
   if (html && html.length > 100) {
     const scraped = parseProductFromHTML(html, url, platform)
+    if (bestResult) {
+      if (bestResult.title) scraped.title = bestResult.title
+      if (bestResult.imageUrl) scraped.imageUrl = bestResult.imageUrl
+    }
     if (
       scraped.title === 'Mercado Libre' ||
       scraped.title === 'Mercado Livre' ||
@@ -289,9 +288,9 @@ export async function scrapeProduct(rawUrl: string): Promise<ScrapedProduct> {
   }
 
   return {
-    title: slugTitle || 'Produto de Afiliado',
+    title: bestResult?.title || slugTitle || 'Produto de Afiliado',
     platform,
-    imageUrl: undefined,
+    imageUrl: bestResult?.imageUrl || undefined,
   }
 }
 
@@ -299,24 +298,75 @@ function parseMercadoLivrePrice(html: string): { priceTo?: number; priceFrom?: n
   let priceTo: number | undefined
   let priceFrom: number | undefined
 
-  // 0. Procura no JSON interno da página (buy_box_winner, price, original_price)
-  const priceMatches = [...html.matchAll(/"price"\s*:\s*([0-9]+(?:\.[0-9]+)?)/gi)]
-  const origMatches = [...html.matchAll(/"original_price"\s*:\s*([0-9]+(?:\.[0-9]+)?)/gi)]
+  // 1. Extração via meta tags (og:price:amount ou itemprop="price")
+  const metaPriceTo =
+    html.match(/<meta[^>]*property=["']og:price:amount["'][^>]*content=["']([0-9.,]+)["']/i)?.[1] ||
+    html.match(/<meta[^>]*content=["']([0-9.,]+)["'][^>]*property=["']og:price:amount["']/i)?.[1] ||
+    html.match(/<meta[^>]*itemprop=["']price["'][^>]*content=["']([0-9.,]+)["']/i)?.[1] ||
+    html.match(/<meta[^>]*content=["']([0-9.,]+)["'][^>]*itemprop=["']price["']/i)?.[1]
 
-  if (priceMatches.length > 0) {
-    const val = parseFloat(priceMatches[0][1])
-    if (!isNaN(val) && val > 0) priceTo = val
+  if (metaPriceTo) {
+    const val = parseFloat(metaPriceTo.replace('.', '').replace(',', '.'))
+    if (!isNaN(val) && val > 0) {
+      priceTo = val
+    }
   }
 
-  if (origMatches.length > 0) {
-    const val = parseFloat(origMatches[0][1])
-    if (!isNaN(val) && val > 0) priceFrom = val
+  // 2. Extração via JSON-LD (<script type="application/ld+json">)
+  if (!priceTo) {
+    const ldMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)
+    if (ldMatches) {
+      for (const block of ldMatches) {
+        try {
+          const content = block.replace(/<script[^>]*>/i, '').replace(/<\/script>/i, '')
+          const parsed = JSON.parse(content)
+          const item = Array.isArray(parsed) ? parsed[0] : parsed
+          const offers = Array.isArray(item?.offers) ? item.offers[0] : item?.offers
+          if (offers?.price) {
+            const p = parseFloat(String(offers.price))
+            if (!isNaN(p) && p > 0) {
+              priceTo = p
+              if (offers.highPrice && parseFloat(String(offers.highPrice)) > p) {
+                priceFrom = parseFloat(String(offers.highPrice))
+              }
+              break
+            }
+          }
+        } catch {}
+      }
+    }
   }
 
-  // Remove linhas de parcelamento (ex: "12x R$ 18,12" ou "10x R$ 20,00") para nunca confundir a parcela com o Preço POR!
+  // 3. Procura no JSON interno de estado da página ("price" / "original_price")
+  if (!priceTo) {
+    const priceMatches = [...html.matchAll(/"price"\s*:\s*([0-9]+(?:\.[0-9]+)?)/gi)]
+    const origMatches = [...html.matchAll(/"original_price"\s*:\s*([0-9]+(?:\.[0-9]+)?)/gi)]
+
+    if (priceMatches.length > 0) {
+      for (const match of priceMatches) {
+        const val = parseFloat(match[1])
+        if (!isNaN(val) && val > 0 && val < 500000) {
+          priceTo = val
+          break
+        }
+      }
+    }
+
+    if (origMatches.length > 0) {
+      for (const match of origMatches) {
+        const val = parseFloat(match[1])
+        if (!isNaN(val) && val > 0 && val < 500000) {
+          priceFrom = val
+          break
+        }
+      }
+    }
+  }
+
+  // Remove linhas de parcelamento (ex: "12x R$ 18,12") para não confundir com o Preço POR
   const cleanHtml = html.replace(/[0-9]{1,2}\s*x\s*R\$\s*[0-9.,]+/gi, '').replace(/[0-9]{1,2}x\s*sem\s*juros/gi, '')
 
-  // 1. Extrai preço riscado (Preço DE)
+  // 4. Extrai preço riscado (Preço DE) da estrutura HTML do Mercado Livre
   if (!priceFrom) {
     const strikethroughMatch =
       cleanHtml.match(/<(?:s|del)[^>]*class=["'][^"']*andes-money-amount[^"']*["'][^>]*>([\s\S]*?)<\/(?:s|del)>/i) ||
@@ -335,10 +385,10 @@ function parseMercadoLivrePrice(html: string): { priceTo?: number; priceFrom?: n
     }
   }
 
-  // 2. Extrai preço principal da oferta (Preço POR)
+  // 5. Extrai preço principal da oferta (Preço POR) da estrutura HTML do Mercado Livre
   if (!priceTo) {
     const mainPriceMatch =
-      cleanHtml.match(/class=["'][^"']*(?:ui-pdp-price__second-line|andes-money-amount--main)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span)>/i) ||
+      cleanHtml.match(/class=["'][^"']*(?:ui-pdp-price__second-line|andes-money-amount--main|ui-pdp-price__part)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span)>/i) ||
       cleanHtml.match(/class=["'][^"']*andes-money-amount[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)
 
     if (mainPriceMatch) {
@@ -351,7 +401,7 @@ function parseMercadoLivrePrice(html: string): { priceTo?: number; priceFrom?: n
     }
   }
 
-  // 3. Fallback: Busca genérica pelas frações "andes-money-amount__fraction"
+  // 6. Fallback final: Busca pelas frações "andes-money-amount__fraction"
   if (!priceTo) {
     const allFractions = Array.from(cleanHtml.matchAll(/andes-money-amount__fraction[^>]*>([0-9.]+)</gi))
     const allCents = Array.from(cleanHtml.matchAll(/andes-money-amount__cents[^>]*>([0-9]+)</gi))
