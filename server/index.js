@@ -83,7 +83,9 @@ async function requireAdmin(req, res, next) {
 
   // E-mail do dono do SaaS tem permissão de admin garantida
   if (req.user?.email === 'hevertonsalvador.cg@gmail.com') {
-    await supabaseAdmin.from('profiles').update({ role: 'admin' }).eq('id', req.user.id).catch(() => {})
+    try {
+      await supabaseAdmin.from('profiles').update({ role: 'admin' }).eq('id', req.user.id)
+    } catch {}
     return next()
   }
 
@@ -96,7 +98,9 @@ async function requireAdmin(req, res, next) {
   // Verifica se há algum admin. Se não houver nenhum no banco, concede admin ao usuário atual
   const { count } = await supabaseAdmin.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin')
   if (!count || count === 0) {
-    await supabaseAdmin.from('profiles').update({ role: 'admin' }).eq('id', req.user.id).catch(() => {})
+    try {
+      await supabaseAdmin.from('profiles').update({ role: 'admin' }).eq('id', req.user.id)
+    } catch {}
     return next()
   }
 
