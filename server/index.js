@@ -482,6 +482,26 @@ async function runScheduler() {
   }
 }
 
+// ─── Keep-Alive do Supabase (Impede que o projeto entre em Pause) ───
+async function keepAliveSupabase() {
+  const client = supabaseAdmin || supabaseAnon
+  if (!client) return
+  try {
+    const { error } = await client.from('profiles').select('id', { count: 'exact', head: true }).limit(1)
+    if (error) {
+      console.error('[Supabase Keep-Alive] Ping falhou:', error.message)
+    } else {
+      console.log(`[Supabase Keep-Alive] Ping enviado com sucesso às ${new Date().toLocaleTimeString('pt-BR')}`)
+    }
+  } catch (e) {
+    console.error('[Supabase Keep-Alive] Erro ao enviar ping:', e.message)
+  }
+}
+
+// Executa Keep-Alive imediatamente e depois a cada 4 horas (14.400.000 ms)
+keepAliveSupabase()
+setInterval(keepAliveSupabase, 4 * 60 * 60 * 1000)
+
 // Inicia o Scheduler
 if (supabaseAdmin && EVOLUTION_BASE_URL) {
   schedulerRunning = true

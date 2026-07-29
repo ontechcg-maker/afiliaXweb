@@ -28,6 +28,17 @@ export async function login(
   return { success: true }
 }
 
+/** Envia e-mail de recuperação de senha */
+export async function resetPassword(
+  email: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) return { success: false, error: 'Supabase não configurado.' }
+  const redirectTo = `${window.location.origin}`
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+  if (error) return { success: false, error: error.message }
+  return { success: true }
+}
+
 /** Cadastro de novo usuário via Supabase Auth */
 export async function register(
   email: string,
