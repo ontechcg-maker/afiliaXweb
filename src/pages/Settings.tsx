@@ -174,79 +174,14 @@ export default function Settings() {
       </Section>
 
       {/* AI */}
-      <Section icon={Bot} title="Inteligência Artificial — sua chave de API">
+      <Section icon={Bot} title="Inteligência Artificial (Geração de Ofertas)">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div>
-            <p style={{ fontSize: 12, color: '#525252', marginBottom: 8 }}>Provedor de IA</p>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {AI_PROVIDERS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => { setIsCustomModel(false); updateSettings({ ai: { ...settings.ai, provider: p.id, model: p.models[0] } }) }}
-                  style={{
-                    padding: '8px 14px', borderRadius: 8,
-                    border: settings.ai.provider === p.id ? '1px solid rgba(99,102,241,0.5)' : '1px solid #2a2a2a',
-                    background: settings.ai.provider === p.id ? 'rgba(99,102,241,0.1)' : 'transparent',
-                    color: settings.ai.provider === p.id ? '#818cf8' : '#525252',
-                    fontSize: 12, fontWeight: settings.ai.provider === p.id ? 700 : 400,
-                    cursor: 'pointer', fontFamily: 'Inter, sans-serif', transition: 'all 0.15s',
-                  }}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {settings.ai.provider !== 'ollama' ? (
-            <div>
-              <p style={{ fontSize: 12, color: '#525252', marginBottom: 6 }}>API Key</p>
-              <PasswordInput
-                value={settings.ai.apiKey}
-                onChange={(v) => updateSettings({ ai: { ...settings.ai, apiKey: v } })}
-                placeholder={`Chave de API do ${selectedProvider.label}`}
-              />
-            </div>
-          ) : (
-            <div>
-              <p style={{ fontSize: 12, color: '#525252', marginBottom: 6 }}>URL do Ollama</p>
-              <input
-                className="input-glass" placeholder="http://localhost:11434"
-                value={settings.ai.ollamaUrl || ''}
-                onChange={(e) => updateSettings({ ai: { ...settings.ai, ollamaUrl: e.target.value } })}
-              />
-            </div>
-          )}
-
-          <div>
-            <p style={{ fontSize: 12, color: '#525252', marginBottom: 6 }}>Modelo</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <select
-                value={isCustomModel || !isKnownModel ? 'custom' : settings.ai.model}
-                onChange={(e) => {
-                  if (e.target.value === 'custom') setIsCustomModel(true)
-                  else { setIsCustomModel(false); updateSettings({ ai: { ...settings.ai, model: e.target.value } }) }
-                }}
-                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, color: '#f5f5f5', padding: '10px 14px', width: '100%', fontFamily: 'Inter, sans-serif', fontSize: 14, outline: 'none', cursor: 'pointer' }}
-              >
-                {selectedProvider.models.map((m) => (
-                  <option key={m} value={m} style={{ background: '#111' }}>
-                    {m === 'custom' ? '✏️ Outro Modelo (digitar ID personalizado...)' : m}
-                  </option>
-                ))}
-              </select>
-              {(isCustomModel || !isKnownModel) && (
-                <div>
-                  <p style={{ fontSize: 11, color: '#22d3ee', marginBottom: 4 }}>ID do Modelo Personalizado</p>
-                  <input
-                    className="input-glass" placeholder="Digite o ID exato do modelo..."
-                    value={settings.ai.model === 'custom' ? '' : settings.ai.model}
-                    onChange={(e) => updateSettings({ ai: { ...settings.ai, model: e.target.value } })}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+            ⚡ A inteligência artificial é <strong style={{ color: '#22d3ee' }}>fornecida e otimizada pela plataforma AfiliaX</strong>.
+          </p>
+          <p style={{ fontSize: 12, color: '#737373', margin: 0 }}>
+            Você não precisa configurar chaves de API nem pagar por tokens adicionais. Suas ofertas serão reescritas automaticamente usando modelos avançados de IA para máxima conversão.
+          </p>
         </div>
       </Section>
 

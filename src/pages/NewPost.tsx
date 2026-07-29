@@ -110,10 +110,6 @@ export default function NewPost() {
 
   const handleGenerateCopy = async () => {
     if (!product) return
-    if (!settings.ai.apiKey && settings.ai.provider !== 'ollama') {
-      setError('Configure a chave de API da IA nas Configurações primeiro.')
-      return
-    }
     setGeneratingCopy(true)
     setError(null)
     setSuccessMsg(null)

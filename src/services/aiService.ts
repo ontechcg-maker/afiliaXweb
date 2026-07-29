@@ -138,29 +138,63 @@ export function cleanCopyOutput(rawText: string): string {
   return cleaned
 }
 
+import { authHeader } from './authService'
+
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+
 export async function generateCopy(
   product: ProductData,
   tone: CopyTone,
-  config: AIConfig
+  config?: AIConfig
 ): Promise<string> {
   const prompt = buildPrompt(product, tone)
   let rawCopy = ''
 
-  switch (config.provider) {
-    case 'gemini':
-      rawCopy = await generateWithGemini(prompt, config)
-      break
-    case 'openai':
-      rawCopy = await generateWithOpenAI(prompt, config)
-      break
-    case 'openrouter':
-      rawCopy = await generateWithOpenRouter(prompt, config)
-      break
-    case 'ollama':
-      rawCopy = await generateWithOllama(prompt, config)
-      break
-    default:
-      throw new Error('Provedor de IA não suportado.')
+  // 1. Se o cliente forneceu uma chave pessoal de IA nas configurações, usa direto
+  if (config?.apiKey && config.apiKey.trim().length > 0) {
+    switch (config.provider) {
+      case 'gemini':
+        rawCopy = await generateWithGemini(prompt, config)
+        break
+      case 'openai':
+        rawCopy = await generateWithOpenAI(prompt, config)
+        break
+      case 'openrouter':
+        rawCopy = await generateWithOpenRouter(prompt, config)
+        break
+      case 'ollama':
+        rawCopy = await generateWithOllama(prompt, config)
+        break
+    }
+  }
+
+  // 2. Se não gerou via chave pessoal, chama a IA centralizada no backend do SaaS
+  if (!rawCopy) {
+    try {
+      const headers = await authHeader()
+      const res = await fetch(`${API_BASE_URL}/api/generate-copy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers,
+        },
+        body: JSON.stringify({ prompt }),
+      })
+      const data = await res.json()
+      if (res.ok && data.copy) {
+        rawCopy = data.copy
+      } else if (data.error) {
+        throw new Error(data.error)
+      }
+    } catch (e: any) {
+      if (config?.apiKey) throw e
+      // Fallback para API pública se backend não responder
+      rawCopy = await generateWithOpenRouter(prompt, {
+        provider: 'openrouter',
+        apiKey: '',
+        model: 'google/gemini-2.0-flash-exp:free',
+      })
+    }
   }
 
   return cleanCopyOutput(rawCopy)

@@ -231,6 +231,83 @@ app.post('/api/fetch-html', requireAuth, async (req, res) => {
   }
 })
 
+// ─── Rota de Geração de Copy via IA (Centralizada no Backend do SaaS) ───
+app.post('/api/generate-copy', requireAuth, async (req, res) => {
+  const { prompt } = req.body || {}
+  if (!prompt) return res.status(400).json({ error: 'Prompt não fornecido.' })
+
+  const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || ''
+  const GEMINI_KEY = process.env.GEMINI_API_KEY || ''
+
+  try {
+    // 1. Tenta OpenRouter se configurado no servidor
+    if (OPENROUTER_KEY) {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${OPENROUTER_KEY.trim()}`,
+          'HTTP-Referer': 'https://app.ontechcg.cloud',
+          'X-Title': 'AfiliaX SaaS',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.0-flash-exp:free',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 500,
+          temperature: 0.7,
+        }),
+      })
+      const data = await response.json()
+      if (response.ok && data.choices?.[0]?.message?.content) {
+        return res.json({ copy: data.choices[0].message.content })
+      }
+    }
+
+    // 2. Tenta Gemini se configurado no servidor
+    if (GEMINI_KEY) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY.trim()}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
+          }),
+        }
+      )
+      const data = await response.json()
+      if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+        return res.json({ copy: data.candidates[0].content.parts[0].text })
+      }
+    }
+
+    // 3. Fallback: Usa OpenRouter público gratuito
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://app.ontechcg.cloud',
+        'X-Title': 'AfiliaX SaaS',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.0-flash-exp:free',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 500,
+        temperature: 0.7,
+      }),
+    })
+    const data = await response.json()
+    if (response.ok && data.choices?.[0]?.message?.content) {
+      return res.json({ copy: data.choices[0].message.content })
+    }
+
+    throw new Error('Não foi possível gerar a copy. Configure OPENROUTER_API_KEY ou GEMINI_API_KEY nas variáveis do backend.')
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Erro ao gerar copy por IA.' })
+  }
+})
+
 // ─── Rotas WhatsApp (por usuário, via instância isolada) ─────────
 
 /**
