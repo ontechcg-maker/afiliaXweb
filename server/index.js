@@ -49,6 +49,9 @@ const app = express()
 app.use(cors({ origin: allowedOrigins, credentials: true }))
 app.use(express.json({ limit: '10mb' }))
 
+// Router para todas as rotas da API (com suporte ao stripprefix do Traefik)
+const router = express.Router()
+
 // ─── Middleware de Autenticação (Supabase JWT) ───────────────────
 async function requireAuth(req, res, next) {
   if (!supabaseAnon) {
@@ -147,7 +150,7 @@ async function evolutionFetch(path, method = 'GET', body = null) {
 }
 
 // ─── Rotas Públicas ──────────────────────────────────────────────
-app.get('/api/health', (_req, res) => {
+router.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     version: '2.0.0',
@@ -159,8 +162,8 @@ app.get('/api/health', (_req, res) => {
 
 // ─── Rotas de Administração (SaaS Admin) ────────────────────────
 
-/** GET /api/admin/config — Retorna as configurações globais salvas no banco */
-app.get('/api/admin/config', requireAuth, requireAdmin, async (_req, res) => {
+/** GET /admin/config — Retorna as configurações globais salvas no banco */
+router.get('/admin/config', requireAuth, requireAdmin, async (_req, res) => {
   try {
     const { data } = await supabaseAdmin.from('system_config').select('*')
     const config = (data || []).reduce((acc, item) => {
@@ -182,8 +185,8 @@ app.get('/api/admin/config', requireAuth, requireAdmin, async (_req, res) => {
   }
 })
 
-/** POST /api/admin/config — Salva as configurações globais no banco */
-app.post('/api/admin/config', requireAuth, requireAdmin, async (req, res) => {
+/** POST /admin/config — Salva as configurações globais no banco */
+router.post('/admin/config', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { evolutionBaseUrl, evolutionApiKey, openrouterApiKey, geminiApiKey, openaiApiKey, aiProvider, aiModel, customModel } = req.body || {}
     
@@ -208,8 +211,8 @@ app.post('/api/admin/config', requireAuth, requireAdmin, async (req, res) => {
   }
 })
 
-/** GET /api/admin/stats — Métricas globais do SaaS */
-app.get('/api/admin/stats', requireAuth, requireAdmin, async (_req, res) => {
+/** GET /admin/stats — Métricas globais do SaaS */
+router.get('/admin/stats', requireAuth, requireAdmin, async (_req, res) => {
   try {
     const [usersRes, offersRes, schedulesRes] = await Promise.all([
       supabaseAdmin.from('profiles').select('id, instance_status', { count: 'exact' }),
@@ -228,8 +231,8 @@ app.get('/api/admin/stats', requireAuth, requireAdmin, async (_req, res) => {
   }
 })
 
-/** GET /api/admin/users — Lista todos os clientes */
-app.get('/api/admin/users', requireAuth, requireAdmin, async (_req, res) => {
+/** GET /admin/users — Lista todos os clientes */
+router.get('/admin/users', requireAuth, requireAdmin, async (_req, res) => {
   try {
     const { data: users, error } = await supabaseAdmin
       .from('profiles')
@@ -243,8 +246,8 @@ app.get('/api/admin/users', requireAuth, requireAdmin, async (_req, res) => {
   }
 })
 
-/** POST /api/admin/toggle-block — Bloqueia ou desbloqueia um cliente */
-app.post('/api/admin/toggle-block', requireAuth, requireAdmin, async (req, res) => {
+/** POST /admin/toggle-block — Bloqueia ou desbloqueia um cliente */
+router.post('/admin/toggle-block', requireAuth, requireAdmin, async (req, res) => {
   const { userId, isBlocked } = req.body || {}
   if (!userId) return res.status(400).json({ error: 'userId é obrigatório.' })
 
@@ -256,8 +259,8 @@ app.post('/api/admin/toggle-block', requireAuth, requireAdmin, async (req, res) 
   }
 })
 
-/** POST /api/admin/set-role — Altera papel de um cliente (admin | user) */
-app.post('/api/admin/set-role', requireAuth, requireAdmin, async (req, res) => {
+/** POST /admin/set-role — Altera papel de um cliente (admin | user) */
+router.post('/admin/set-role', requireAuth, requireAdmin, async (req, res) => {
   const { userId, role } = req.body || {}
   if (!userId || !role) return res.status(400).json({ error: 'userId e role são obrigatórios.' })
 
@@ -270,7 +273,7 @@ app.post('/api/admin/set-role', requireAuth, requireAdmin, async (req, res) => {
 })
 
 // ─── Rotas de Scraping (proxy server-side sem CORS) ─────────────
-app.get('/api/unshorten', requireAuth, async (req, res) => {
+router.get('/unshorten', requireAuth, async (req, res) => {
   const { url } = req.query
   if (!url) return res.status(400).json({ error: 'Parâmetro url é obrigatório.' })
   try {
@@ -285,7 +288,7 @@ app.get('/api/unshorten', requireAuth, async (req, res) => {
   }
 })
 
-app.post('/api/fetch-html', requireAuth, async (req, res) => {
+router.post('/fetch-html', requireAuth, async (req, res) => {
   const { url } = req.body || {}
   if (!url) return res.status(400).json({ error: 'Campo url é obrigatório.' })
   try {
@@ -309,7 +312,7 @@ app.post('/api/fetch-html', requireAuth, async (req, res) => {
 })
 
 // ─── Rota de Geração de Copy via IA (Centralizada no Backend do SaaS) ───
-app.post('/api/generate-copy', requireAuth, async (req, res) => {
+router.post('/generate-copy', requireAuth, async (req, res) => {
   const { prompt } = req.body || {}
   if (!prompt) return res.status(400).json({ error: 'Prompt não fornecido.' })
 
@@ -375,10 +378,10 @@ app.post('/api/generate-copy', requireAuth, async (req, res) => {
 // ─── Rotas WhatsApp (por usuário, via instância isolada) ─────────
 
 /**
- * POST /api/whatsapp/connect
+ * POST /whatsapp/connect
  * Cria a instância do usuário na Evolution API (se não existir) e retorna o QR Code.
  */
-app.post('/api/whatsapp/connect', requireAuth, async (req, res) => {
+router.post('/whatsapp/connect', requireAuth, async (req, res) => {
   try {
     const profile = await getUserProfile(req.user.id)
     if (!profile?.instance_name) {
@@ -411,10 +414,10 @@ app.post('/api/whatsapp/connect', requireAuth, async (req, res) => {
 })
 
 /**
- * GET /api/whatsapp/status
+ * GET /whatsapp/status
  * Retorna o status de conexão WhatsApp do usuário logado.
  */
-app.get('/api/whatsapp/status', requireAuth, async (req, res) => {
+router.get('/whatsapp/status', requireAuth, async (req, res) => {
   try {
     const profile = await getUserProfile(req.user.id)
     if (!profile?.instance_name) {
@@ -444,10 +447,10 @@ app.get('/api/whatsapp/status', requireAuth, async (req, res) => {
 })
 
 /**
- * POST /api/whatsapp/disconnect
+ * POST /whatsapp/disconnect
  * Desconecta e remove a instância WhatsApp do usuário.
  */
-app.post('/api/whatsapp/disconnect', requireAuth, async (req, res) => {
+router.post('/whatsapp/disconnect', requireAuth, async (req, res) => {
   try {
     const profile = await getUserProfile(req.user.id)
     if (!profile?.instance_name) return res.json({ success: true })
@@ -466,10 +469,10 @@ app.post('/api/whatsapp/disconnect', requireAuth, async (req, res) => {
 })
 
 /**
- * GET /api/whatsapp/groups
+ * GET /whatsapp/groups
  * Retorna a lista de grupos do WhatsApp do usuário logado.
  */
-app.get('/api/whatsapp/groups', requireAuth, async (req, res) => {
+router.get('/whatsapp/groups', requireAuth, async (req, res) => {
   try {
     const profile = await getUserProfile(req.user.id)
     if (!profile?.instance_name) return res.json([])
@@ -498,10 +501,10 @@ app.get('/api/whatsapp/groups', requireAuth, async (req, res) => {
 })
 
 /**
- * POST /api/whatsapp/send-text
+ * POST /whatsapp/send-text
  * Envia mensagem de texto via instância do usuário.
  */
-app.post('/api/whatsapp/send-text', requireAuth, async (req, res) => {
+router.post('/whatsapp/send-text', requireAuth, async (req, res) => {
   const { groupId, text } = req.body || {}
   if (!groupId || !text) return res.status(400).json({ error: 'groupId e text são obrigatórios.' })
 
@@ -521,10 +524,10 @@ app.post('/api/whatsapp/send-text', requireAuth, async (req, res) => {
 })
 
 /**
- * POST /api/whatsapp/send-media
+ * POST /whatsapp/send-media
  * Envia mensagem com imagem/vídeo via instância do usuário.
  */
-app.post('/api/whatsapp/send-media', requireAuth, async (req, res) => {
+router.post('/whatsapp/send-media', requireAuth, async (req, res) => {
   const { groupId, mediaUrl, caption, mediaType = 'image' } = req.body || {}
   if (!groupId || !mediaUrl) return res.status(400).json({ error: 'groupId e mediaUrl são obrigatórios.' })
 
@@ -548,6 +551,11 @@ app.post('/api/whatsapp/send-media', requireAuth, async (req, res) => {
     res.status(500).json({ error: e.message })
   }
 })
+
+// ─── Registrar todas as rotas no Express com prefixo /api ────────
+// (compatível com o Traefik stripprefix=/api E com chamadas diretas /api/...)
+app.use('/api', router)
+app.use('/', router)
 
 // ─── Scheduler Multi-Tenant 24/7 ────────────────────────────────
 let schedulerRunning = false
