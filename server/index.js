@@ -237,7 +237,25 @@ async function evolutionFetch(path, method = 'GET', body = null) {
   if (body) opts.body = JSON.stringify(body)
   const res = await fetch(`${baseUrl}${path}`, opts)
   const text = await res.text()
-  try { return JSON.parse(text) } catch { return { rawText: text } }
+  let data
+  try {
+    data = JSON.parse(text)
+  } catch {
+    data = { rawText: text }
+  }
+
+  if (!res.ok) {
+    const errorMsg = data?.message || data?.error || data?.response?.message || (typeof data === 'string' ? data : `HTTP ${res.status}`)
+    const fullMsg = Array.isArray(errorMsg) ? errorMsg.join(', ') : String(errorMsg)
+    throw new Error(`Evolution API: ${fullMsg}`)
+  }
+
+  if (data && typeof data === 'object' && data.error && data.message) {
+    const msg = Array.isArray(data.message) ? data.message.join(', ') : data.message
+    throw new Error(`Evolution API: ${msg}`)
+  }
+
+  return data
 }
 
 // ─── Rotas Públicas ──────────────────────────────────────────────
@@ -828,6 +846,24 @@ router.get('/analytics/summary', requireAuth, async (req, res) => {
   })
 })
 
+// Helper para incrementar o contador de postagens do usuário
+async function incrementUserPostCount(userId) {
+  if (!supabaseAdmin || !userId) return
+  const todayStr = new Date().toISOString().split('T')[0]
+  try {
+    const { data: profile } = await supabaseAdmin.from('profiles').select('daily_posts_count, last_post_date').eq('id', userId).maybeSingle()
+    const lastDate = profile?.last_post_date ? new Date(profile.last_post_date).toISOString().split('T')[0] : ''
+    const currentCount = lastDate === todayStr ? (profile?.daily_posts_count || 0) : 0
+
+    await supabaseAdmin.from('profiles').update({
+      daily_posts_count: currentCount + 1,
+      last_post_date: new Date().toISOString(),
+    }).eq('id', userId)
+  } catch (e) {
+    console.error('[incrementUserPostCount] Erro:', e.message)
+  }
+}
+
 /**
  * POST /whatsapp/send-text
  * Envia mensagem de texto via instância do usuário com verificação de limite.
@@ -852,7 +888,9 @@ router.post('/whatsapp/send-text', requireAuth, checkPostLimit, async (req, res)
     for (const number of targets) {
       try {
         await evolutionFetch(`/message/sendText/${profile.instance_name}`, 'POST', {
-          number, text, options: { delay: 1200, presence: 'composing' },
+          number,
+          text,
+          options: { delay: 1200, presence: 'composing' },
         })
         successCount++
       } catch (err) {
@@ -864,6 +902,7 @@ router.post('/whatsapp/send-text', requireAuth, checkPostLimit, async (req, res)
       throw new Error(lastError)
     }
 
+    await incrementUserPostCount(req.user.id)
     res.json({ success: true, count: successCount })
   } catch (e) {
     res.status(500).json({ error: e.message })
@@ -893,9 +932,10 @@ router.post('/whatsapp/send-media', requireAuth, checkPostLimit, async (req, res
     const isHttp = mediaUrl.startsWith('http')
 
     const payload = {
-      mediatype: mediaType,
+      mediaType: mediaType === 'video' ? 'video' : 'image',
+      mediatype: mediaType === 'video' ? 'video' : 'image',
+      media: isHttp ? mediaUrl : (isDataUri ? mediaUrl.split(',')[1] : mediaUrl),
       mediaUrl: isHttp ? mediaUrl : undefined,
-      media: isDataUri ? mediaUrl.split(',')[1] : undefined,
       caption: caption || '',
       fileName: mediaType === 'video' ? 'video.mp4' : 'imagem.jpg',
       mimetype: mediaType === 'video' ? 'video/mp4' : 'image/jpeg',
@@ -919,6 +959,7 @@ router.post('/whatsapp/send-media', requireAuth, checkPostLimit, async (req, res
       throw new Error(lastError)
     }
 
+    await incrementUserPostCount(req.user.id)
     res.json({ success: true, count: successCount })
   } catch (e) {
     res.status(500).json({ error: e.message })
