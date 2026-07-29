@@ -102,18 +102,42 @@ async function getUserProfile(userId) {
   return data
 }
 
+// ─── Helper: busca configurações do sistema salvas no banco ─────
+async function getSystemConfig() {
+  let baseUrl = EVOLUTION_BASE_URL
+  let apiKey = EVOLUTION_API_KEY
+  let openrouterKey = process.env.OPENROUTER_API_KEY || ''
+  let geminiKey = process.env.GEMINI_API_KEY || ''
+
+  if (supabaseAdmin) {
+    try {
+      const { data } = await supabaseAdmin.from('system_config').select('*')
+      if (data && data.length > 0) {
+        const map = data.reduce((acc, i) => { acc[i.key] = i.value; return acc }, {})
+        if (map.evolution_base_url) baseUrl = map.evolution_base_url.trim().replace(/\/$/, '')
+        if (map.evolution_api_key) apiKey = map.evolution_api_key.trim()
+        if (map.openrouter_api_key) openrouterKey = map.openrouter_api_key.trim()
+        if (map.gemini_api_key) geminiKey = map.gemini_api_key.trim()
+      }
+    } catch {}
+  }
+  return { baseUrl, apiKey, openrouterKey, geminiKey }
+}
+
 // ─── Helper: chama Evolution API ────────────────────────────────
 async function evolutionFetch(path, method = 'GET', body = null) {
-  if (!EVOLUTION_BASE_URL || !EVOLUTION_API_KEY) {
-    throw new Error('Evolution API não configurada no servidor.')
+  const { baseUrl, apiKey } = await getSystemConfig()
+
+  if (!baseUrl || !apiKey) {
+    throw new Error('Evolution API não configurada no servidor. Acesse o Painel Admin para configurar URL e API Key.')
   }
   const opts = {
     method,
-    headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
+    headers: { 'Content-Type': 'application/json', apikey: apiKey },
     signal: AbortSignal.timeout(15000),
   }
   if (body) opts.body = JSON.stringify(body)
-  const res = await fetch(`${EVOLUTION_BASE_URL}${path}`, opts)
+  const res = await fetch(`${baseUrl}${path}`, opts)
   const text = await res.text()
   try { return JSON.parse(text) } catch { return { rawText: text } }
 }
@@ -130,6 +154,47 @@ app.get('/api/health', (_req, res) => {
 })
 
 // ─── Rotas de Administração (SaaS Admin) ────────────────────────
+
+/** GET /api/admin/config — Retorna as configurações globais salvas no banco */
+app.get('/api/admin/config', requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const { data } = await supabaseAdmin.from('system_config').select('*')
+    const config = (data || []).reduce((acc, item) => {
+      acc[item.key] = item.value
+      return acc
+    }, {})
+    res.json({
+      evolutionBaseUrl: config.evolution_base_url || process.env.EVOLUTION_BASE_URL || '',
+      evolutionApiKey: config.evolution_api_key || process.env.EVOLUTION_API_KEY || '',
+      openrouterApiKey: config.openrouter_api_key || process.env.OPENROUTER_API_KEY || '',
+      geminiApiKey: config.gemini_api_key || process.env.GEMINI_API_KEY || '',
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+/** POST /api/admin/config — Salva as configurações globais no banco */
+app.post('/api/admin/config', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { evolutionBaseUrl, evolutionApiKey, openrouterApiKey, geminiApiKey } = req.body || {}
+    
+    const items = [
+      { key: 'evolution_base_url', value: evolutionBaseUrl || '' },
+      { key: 'evolution_api_key', value: evolutionApiKey || '' },
+      { key: 'openrouter_api_key', value: openrouterApiKey || '' },
+      { key: 'gemini_api_key', value: geminiApiKey || '' },
+    ]
+
+    for (const item of items) {
+      await supabaseAdmin.from('system_config').upsert(item, { onConflict: 'key' })
+    }
+
+    res.json({ success: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
 
 /** GET /api/admin/stats — Métricas globais do SaaS */
 app.get('/api/admin/stats', requireAuth, requireAdmin, async (_req, res) => {

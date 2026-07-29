@@ -19,8 +19,11 @@ import {
   getAdminUsers,
   toggleBlockUser,
   setUserRole,
+  getAdminSystemConfig,
+  saveAdminSystemConfig,
   type AdminStats,
   type AdminUser,
+  type SystemConfig,
 } from '../services/adminService'
 import { useApp } from '../context/AppContext'
 
@@ -75,20 +78,46 @@ export default function Admin() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
+  // Configurações Globais do SaaS (Evolution + IA)
+  const [sysConfig, setSysConfig] = useState<SystemConfig>({
+    evolutionBaseUrl: '',
+    evolutionApiKey: '',
+    openrouterApiKey: '',
+    geminiApiKey: '',
+  })
+  const [savingConfig, setSavingConfig] = useState(false)
+
   const loadAdminData = async () => {
     setLoading(true)
     setErrorMsg(null)
     try {
-      const [statsData, usersData] = await Promise.all([
+      const [statsData, usersData, configData] = await Promise.all([
         getAdminStats().catch(() => null),
         getAdminUsers().catch(() => []),
+        getAdminSystemConfig().catch(() => ({ evolutionBaseUrl: '', evolutionApiKey: '', openrouterApiKey: '', geminiApiKey: '' })),
       ])
       setStats(statsData)
       setUsersList(usersData)
+      setSysConfig(configData)
     } catch (e: any) {
       setErrorMsg(e.message || 'Erro ao carregar dados de administração.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleSaveConfig = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingConfig(true)
+    setErrorMsg(null)
+    setSuccessMsg(null)
+    try {
+      await saveAdminSystemConfig(sysConfig)
+      setSuccessMsg('Configurações globais salvas com sucesso! A Evolution API e a IA já estão operacionais para todos os clientes.')
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Erro ao salvar configurações do sistema.')
+    } finally {
+      setSavingConfig(false)
     }
   }
 
@@ -236,6 +265,80 @@ export default function Admin() {
           color="#f59e0b"
           subtext="Posts entregues via WhatsApp"
         />
+      </div>
+
+      {/* Form de Configurações Globais (Evolution API + IA) */}
+      <div className="card" style={{ padding: 24, border: '1px solid rgba(99,102,241,0.2)' }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Crown size={18} color="#6366f1" />
+          Configurações Globais do SaaS (Dono do Sistema)
+        </h3>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 20 }}>
+          As chaves preenchidas aqui serão utilizadas por todos os seus clientes para conexão de WhatsApp e geração de ofertas por IA.
+        </p>
+
+        <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                Evolution API — URL Base
+              </label>
+              <input
+                type="text"
+                className="input-glass"
+                placeholder="https://api.ontechcg.cloud"
+                value={sysConfig.evolutionBaseUrl}
+                onChange={(e) => setSysConfig({ ...sysConfig, evolutionBaseUrl: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                Evolution API — API Key Global
+              </label>
+              <input
+                type="password"
+                className="input-glass"
+                placeholder="Cole sua API Key da Evolution"
+                value={sysConfig.evolutionApiKey}
+                onChange={(e) => setSysConfig({ ...sysConfig, evolutionApiKey: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                OpenRouter API Key (Opcional)
+              </label>
+              <input
+                type="password"
+                className="input-glass"
+                placeholder="sk-or-v1-..."
+                value={sysConfig.openrouterApiKey}
+                onChange={(e) => setSysConfig({ ...sysConfig, openrouterApiKey: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                Google Gemini API Key (Opcional)
+              </label>
+              <input
+                type="password"
+                className="input-glass"
+                placeholder="AIzaSy..."
+                value={sysConfig.geminiApiKey}
+                onChange={(e) => setSysConfig({ ...sysConfig, geminiApiKey: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+            <button className="btn-primary" type="submit" disabled={savingConfig} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {savingConfig ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Crown size={16} />}
+              Salvar Configurações do SaaS
+            </button>
+          </div>
+        </form>
       </div>
 
       {/* Tabela de Gestão de Clientes */}

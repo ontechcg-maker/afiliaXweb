@@ -41,7 +41,12 @@ export const INITIAL_SQL_SCHEMA = `-- ==========================================
 -- Execute no SQL Editor do seu Supabase
 -- ============================================================
 
--- 1. Garante a criação das tabelas
+CREATE TABLE IF NOT EXISTS public.system_config (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT,

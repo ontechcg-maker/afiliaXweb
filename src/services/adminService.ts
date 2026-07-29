@@ -62,3 +62,23 @@ export async function setUserRole(userId: string, role: string): Promise<void> {
     body: JSON.stringify({ userId, role }),
   })
 }
+
+export interface SystemConfig {
+  evolutionBaseUrl: string
+  evolutionApiKey: string
+  openrouterApiKey: string
+  geminiApiKey: string
+}
+
+/** Obtém as configurações globais do SaaS */
+export async function getAdminSystemConfig(): Promise<SystemConfig> {
+  return adminApiCall('/config')
+}
+
+/** Salva as configurações globais do SaaS */
+export async function saveAdminSystemConfig(config: SystemConfig): Promise<void> {
+  await adminApiCall('/config', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  })
+}
