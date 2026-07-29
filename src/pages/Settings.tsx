@@ -3,32 +3,6 @@ import { Save, Eye, EyeOff, Loader, CheckCircle, XCircle, Bot, MessageSquare, Se
 import { useApp } from '../context/AppContext'
 import { INITIAL_SQL_SCHEMA } from '../services/supabaseClient'
 import { getTelegramBotInfo } from '../services/telegramService'
-import type { AIProvider } from '../services/aiService'
-
-const AI_PROVIDERS = [
-  {
-    id: 'gemini' as AIProvider,
-    label: 'Google Gemini',
-    models: [
-      'gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-1.5-pro',
-      'gemini-2.0-flash', 'gemini-2.5-flash', 'custom',
-    ],
-  },
-  {
-    id: 'openai' as AIProvider,
-    label: 'OpenAI',
-    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo', 'custom'],
-  },
-  {
-    id: 'openrouter' as AIProvider,
-    label: 'OpenRouter',
-    models: [
-      'deepseek/deepseek-r1', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct',
-      'google/gemini-2.5-flash', 'anthropic/claude-3.5-sonnet', 'custom',
-    ],
-  },
-  { id: 'ollama' as AIProvider, label: 'Ollama (Local)', models: ['llama3.2', 'mistral', 'deepseek-r1:7b', 'custom'] },
-]
 
 function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const [show, setShow] = useState(false)
