@@ -150,25 +150,30 @@ export async function generateCopy(
   const prompt = buildPrompt(product, tone)
   let rawCopy = ''
 
-  // 1. Se o cliente forneceu uma chave pessoal de IA nas configurações, usa direto
+  // 1. Tenta usar a chave pessoal do cliente se fornecida nas configurações
   if (config?.apiKey && config.apiKey.trim().length > 0) {
-    switch (config.provider) {
-      case 'gemini':
-        rawCopy = await generateWithGemini(prompt, config)
-        break
-      case 'openai':
-        rawCopy = await generateWithOpenAI(prompt, config)
-        break
-      case 'openrouter':
-        rawCopy = await generateWithOpenRouter(prompt, config)
-        break
-      case 'ollama':
-        rawCopy = await generateWithOllama(prompt, config)
-        break
+    try {
+      switch (config.provider) {
+        case 'gemini':
+          rawCopy = await generateWithGemini(prompt, config)
+          break
+        case 'openai':
+          rawCopy = await generateWithOpenAI(prompt, config)
+          break
+        case 'openrouter':
+          rawCopy = await generateWithOpenRouter(prompt, config)
+          break
+        case 'ollama':
+          rawCopy = await generateWithOllama(prompt, config)
+          break
+      }
+    } catch (clientErr: any) {
+      console.warn('[AI Service] Chave do cliente inválida. Usando IA do SaaS:', clientErr.message)
+      rawCopy = '' // Se a chave pessoal falhar, força o fallback para a IA do SaaS
     }
   }
 
-  // 2. Se não gerou via chave pessoal, chama a IA centralizada no backend do SaaS
+  // 2. Se não gerou via chave pessoal (ou se a chave falhou), usa a IA centralizada do SaaS no backend
   if (!rawCopy) {
     try {
       const headers = await authHeader()
