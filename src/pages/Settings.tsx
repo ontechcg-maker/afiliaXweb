@@ -69,7 +69,6 @@ export default function Settings() {
   const [tgBotName, setTgBotName] = useState('')
   const [showSql, setShowSql] = useState(false)
   const [copiedSql, setCopiedSql] = useState(false)
-  const [isCustomModel, setIsCustomModel] = useState(false)
 
   const handleTestTelegram = async () => {
     setTestingTg(true)
@@ -90,9 +89,6 @@ export default function Settings() {
     setSaving(true)
     setTimeout(() => setSaving(false), 800)
   }
-
-  const selectedProvider = AI_PROVIDERS.find((p) => p.id === settings.ai.provider) || AI_PROVIDERS[0]
-  const isKnownModel = selectedProvider.models.includes(settings.ai.model)
 
   return (
     <div
