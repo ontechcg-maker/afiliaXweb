@@ -40,7 +40,7 @@ interface AppContextType {
 }
 
 const defaultSettings: AppSettings = {
-  ai: { provider: 'gemini', apiKey: '', model: 'gemini-1.5-flash' },
+  ai: { provider: 'openrouter', apiKey: '', model: 'google/gemini-2.0-flash-exp:free' },
   telegram: { botToken: '' },
   maxGroupMembers: 1000,
   sendIntervalMinutes: 20,

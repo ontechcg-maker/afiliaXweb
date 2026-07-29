@@ -187,13 +187,7 @@ export async function generateCopy(
         throw new Error(data.error)
       }
     } catch (e: any) {
-      if (config?.apiKey) throw e
-      // Fallback para API pública se backend não responder
-      rawCopy = await generateWithOpenRouter(prompt, {
-        provider: 'openrouter',
-        apiKey: '',
-        model: 'google/gemini-2.0-flash-exp:free',
-      })
+      throw new Error(e.message || 'Erro ao se comunicar com a Inteligência Artificial do SaaS.')
     }
   }
 

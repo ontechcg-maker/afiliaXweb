@@ -80,9 +80,14 @@ async function requireAuth(req, res, next) {
 // ─── Middleware Admin ───────────────────────────────────────────
 async function requireAdmin(req, res, next) {
   if (!supabaseAdmin) return res.status(503).json({ error: 'Supabase não configurado.' })
-  
-  // O primeiro usuário cadastrado no sistema vira Admin automaticamente se nenhum for admin ainda
-  const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', req.user.id).single()
+
+  // E-mail do dono do SaaS tem permissão de admin garantida
+  if (req.user?.email === 'hevertonsalvador.cg@gmail.com') {
+    await supabaseAdmin.from('profiles').update({ role: 'admin' }).eq('id', req.user.id).catch(() => {})
+    return next()
+  }
+
+  const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', req.user.id).maybeSingle()
   
   if (profile?.role === 'admin') {
     return next()
@@ -90,8 +95,8 @@ async function requireAdmin(req, res, next) {
 
   // Verifica se há algum admin. Se não houver nenhum no banco, concede admin ao usuário atual
   const { count } = await supabaseAdmin.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin')
-  if (count === 0) {
-    await supabaseAdmin.from('profiles').update({ role: 'admin' }).eq('id', req.user.id)
+  if (!count || count === 0) {
+    await supabaseAdmin.from('profiles').update({ role: 'admin' }).eq('id', req.user.id).catch(() => {})
     return next()
   }
 
