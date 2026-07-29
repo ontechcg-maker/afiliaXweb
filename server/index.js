@@ -352,7 +352,11 @@ router.get('/admin/users', requireAuth, requireAdmin, async (_req, res) => {
     if (!supabaseAdmin) return res.json([])
 
     // 1. Busca todos os usuários cadastrados na Autenticação (auth.users)
-    const { data: authData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 }).catch(() => ({ data: { users: [] } }))
+    const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }).catch((e) => {
+      console.error('[Admin Users] Erro ao listar auth.users:', e.message)
+      return { data: { users: [] } }
+    })
+    if (authErr) console.error('[Admin Users] authErr:', authErr.message)
     const authUsers = authData?.users || []
 
     // 2. Busca todos os perfis na tabela public.profiles

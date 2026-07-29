@@ -186,9 +186,12 @@ export default function Admin() {
   }
 
   const filteredUsers = usersList.filter((u) => {
-    const matchesSearch =
-      u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.instance_name.toLowerCase().includes(searchTerm.toLowerCase())
+    const emailStr = (u.email || '').toLowerCase()
+    const instStr = (u.instance_name || '').toLowerCase()
+    const idStr = (u.id || '').toLowerCase()
+    const search = (searchTerm || '').toLowerCase()
+
+    const matchesSearch = emailStr.includes(search) || instStr.includes(search) || idStr.includes(search)
 
     if (!matchesSearch) return false
 
@@ -603,13 +606,13 @@ export default function Admin() {
                               color: u.role === 'admin' ? '#818cf8' : '#22d3ee',
                             }}
                           >
-                            {u.email.charAt(0).toUpperCase()}
+                            {(u.email || 'U').charAt(0).toUpperCase()}
                           </div>
                           <div>
                             <p style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>
-                              {u.email} {isSelf && <span style={{ fontSize: 10, color: '#6366f1', background: 'rgba(99,102,241,0.15)', padding: '2px 6px', borderRadius: 4 }}>Você</span>}
+                              {u.email || 'Usuário Sem E-mail'} {isSelf && <span style={{ fontSize: 10, color: '#6366f1', background: 'rgba(99,102,241,0.15)', padding: '2px 6px', borderRadius: 4 }}>Você</span>}
                             </p>
-                            <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>ID: {u.id.substring(0, 8)}...</p>
+                            <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>ID: {(u.id || '').substring(0, 8)}...</p>
                           </div>
                         </div>
                       </td>
