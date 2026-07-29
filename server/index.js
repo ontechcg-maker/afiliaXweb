@@ -108,6 +108,8 @@ async function getSystemConfig() {
   let apiKey = EVOLUTION_API_KEY
   let openrouterKey = process.env.OPENROUTER_API_KEY || ''
   let geminiKey = process.env.GEMINI_API_KEY || ''
+  let aiProvider = 'auto'
+  let aiModel = 'google/gemini-2.0-flash-exp:free'
 
   if (supabaseAdmin) {
     try {
@@ -118,10 +120,12 @@ async function getSystemConfig() {
         if (map.evolution_api_key) apiKey = map.evolution_api_key.trim()
         if (map.openrouter_api_key) openrouterKey = map.openrouter_api_key.trim()
         if (map.gemini_api_key) geminiKey = map.gemini_api_key.trim()
+        if (map.ai_provider) aiProvider = map.ai_provider.trim()
+        if (map.ai_model) aiModel = map.ai_model.trim()
       }
     } catch {}
   }
-  return { baseUrl, apiKey, openrouterKey, geminiKey }
+  return { baseUrl, apiKey, openrouterKey, geminiKey, aiProvider, aiModel }
 }
 
 // ─── Helper: chama Evolution API ────────────────────────────────
@@ -168,6 +172,8 @@ app.get('/api/admin/config', requireAuth, requireAdmin, async (_req, res) => {
       evolutionApiKey: config.evolution_api_key || process.env.EVOLUTION_API_KEY || '',
       openrouterApiKey: config.openrouter_api_key || process.env.OPENROUTER_API_KEY || '',
       geminiApiKey: config.gemini_api_key || process.env.GEMINI_API_KEY || '',
+      aiProvider: config.ai_provider || 'openrouter',
+      aiModel: config.ai_model || 'google/gemini-2.0-flash-exp:free',
     })
   } catch (e) {
     res.status(500).json({ error: e.message })
@@ -177,13 +183,15 @@ app.get('/api/admin/config', requireAuth, requireAdmin, async (_req, res) => {
 /** POST /api/admin/config — Salva as configurações globais no banco */
 app.post('/api/admin/config', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { evolutionBaseUrl, evolutionApiKey, openrouterApiKey, geminiApiKey } = req.body || {}
+    const { evolutionBaseUrl, evolutionApiKey, openrouterApiKey, geminiApiKey, aiProvider, aiModel } = req.body || {}
     
     const items = [
       { key: 'evolution_base_url', value: evolutionBaseUrl || '' },
       { key: 'evolution_api_key', value: evolutionApiKey || '' },
       { key: 'openrouter_api_key', value: openrouterApiKey || '' },
       { key: 'gemini_api_key', value: geminiApiKey || '' },
+      { key: 'ai_provider', value: aiProvider || 'openrouter' },
+      { key: 'ai_model', value: aiModel || 'google/gemini-2.0-flash-exp:free' },
     ]
 
     for (const item of items) {
@@ -301,37 +309,14 @@ app.post('/api/generate-copy', requireAuth, async (req, res) => {
   const { prompt } = req.body || {}
   if (!prompt) return res.status(400).json({ error: 'Prompt não fornecido.' })
 
-  const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || ''
-  const GEMINI_KEY = process.env.GEMINI_API_KEY || ''
+  const { openrouterKey, geminiKey, aiProvider, aiModel } = await getSystemConfig()
 
   try {
-    // 1. Tenta OpenRouter se configurado no servidor
-    if (OPENROUTER_KEY) {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${OPENROUTER_KEY.trim()}`,
-          'HTTP-Referer': 'https://app.ontechcg.cloud',
-          'X-Title': 'AfiliaX SaaS',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.0-flash-exp:free',
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 500,
-          temperature: 0.7,
-        }),
-      })
-      const data = await response.json()
-      if (response.ok && data.choices?.[0]?.message?.content) {
-        return res.json({ copy: data.choices[0].message.content })
-      }
-    }
-
-    // 2. Tenta Gemini se configurado no servidor
-    if (GEMINI_KEY) {
+    // 1. Provedor Gemini Direto se selecionado e com chave
+    if ((aiProvider === 'gemini' || !openrouterKey) && geminiKey) {
+      const targetModel = aiModel && aiModel.startsWith('gemini') ? aiModel : 'gemini-1.5-flash'
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY.trim()}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${geminiKey.trim()}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -347,16 +332,22 @@ app.post('/api/generate-copy', requireAuth, async (req, res) => {
       }
     }
 
-    // 3. Fallback: Usa OpenRouter público gratuito
+    // 2. OpenRouter (Suporta qualquer modelo: DeepSeek, Llama, Gemini, Claude, etc.)
+    const targetOpenRouterModel = aiModel || 'google/gemini-2.0-flash-exp:free'
+    const headers = {
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://app.ontechcg.cloud',
+      'X-Title': 'AfiliaX SaaS',
+    }
+    if (openrouterKey) {
+      headers['Authorization'] = `Bearer ${openrouterKey.trim()}`
+    }
+
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://app.ontechcg.cloud',
-        'X-Title': 'AfiliaX SaaS',
-      },
+      headers,
       body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-exp:free',
+        model: targetOpenRouterModel,
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 500,
         temperature: 0.7,
@@ -367,7 +358,11 @@ app.post('/api/generate-copy', requireAuth, async (req, res) => {
       return res.json({ copy: data.choices[0].message.content })
     }
 
-    throw new Error('Não foi possível gerar a copy. Configure OPENROUTER_API_KEY ou GEMINI_API_KEY nas variáveis do backend.')
+    if (data.error?.message) {
+      throw new Error(`Erro na IA (${targetOpenRouterModel}): ${data.error.message}`)
+    }
+
+    throw new Error('Não foi possível gerar a copy com o modelo selecionado.')
   } catch (e) {
     res.status(500).json({ error: e.message || 'Erro ao gerar copy por IA.' })
   }

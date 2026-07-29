@@ -330,6 +330,47 @@ export default function Admin() {
                 onChange={(e) => setSysConfig({ ...sysConfig, geminiApiKey: e.target.value })}
               />
             </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                Provedor de IA Padrão do SaaS
+              </label>
+              <select
+                className="input-glass"
+                style={{ background: 'rgba(255,255,255,0.04)', color: '#fff', cursor: 'pointer' }}
+                value={sysConfig.aiProvider || 'openrouter'}
+                onChange={(e) => setSysConfig({ ...sysConfig, aiProvider: e.target.value })}
+              >
+                <option value="openrouter" style={{ background: '#111' }}>OpenRouter (Suporta DeepSeek, Llama, Gemini, Claude)</option>
+                <option value="gemini" style={{ background: '#111' }}>Google Gemini (API Direta)</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                Modelo de IA Utilizado
+              </label>
+              <select
+                className="input-glass"
+                style={{ background: 'rgba(255,255,255,0.04)', color: '#fff', cursor: 'pointer' }}
+                value={sysConfig.aiModel || 'google/gemini-2.0-flash-exp:free'}
+                onChange={(e) => setSysConfig({ ...sysConfig, aiModel: e.target.value })}
+              >
+                <optgroup label="Modelos Gratuitos / Alta Performance (OpenRouter)">
+                  <option value="google/gemini-2.0-flash-exp:free" style={{ background: '#111' }}>⚡ Google Gemini 2.0 Flash (Gratuito / Recomendado)</option>
+                  <option value="deepseek/deepseek-chat" style={{ background: '#111' }}>🧠 DeepSeek V3 (DeepSeek Chat)</option>
+                  <option value="deepseek/deepseek-r1" style={{ background: '#111' }}>💡 DeepSeek R1 (Raciocínio Avançado)</option>
+                  <option value="meta-llama/llama-3.3-70b-instruct" style={{ background: '#111' }}>🦙 Meta Llama 3.3 70B</option>
+                  <option value="anthropic/claude-3.5-sonnet" style={{ background: '#111' }}>🎭 Claude 3.5 Sonnet</option>
+                  <option value="openai/gpt-4o-mini" style={{ background: '#111' }}>🤖 OpenAI GPT-4o Mini</option>
+                </optgroup>
+                <optgroup label="API Direta Google Gemini">
+                  <option value="gemini-1.5-flash" style={{ background: '#111' }}>✨ Gemini 1.5 Flash</option>
+                  <option value="gemini-2.0-flash" style={{ background: '#111' }}>🚀 Gemini 2.0 Flash</option>
+                  <option value="gemini-1.5-pro" style={{ background: '#111' }}>💎 Gemini 1.5 Pro</option>
+                </optgroup>
+              </select>
+            </div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
