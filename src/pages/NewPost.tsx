@@ -6,7 +6,7 @@ import { useApp } from '../context/AppContext'
 import MockupPreview from '../components/MockupPreview'
 import { calculateNextScheduleTime, loadQueue, saveQueue, type ScheduledPost } from '../services/schedulerService'
 import { getSupabaseClient } from '../services/supabaseClient'
-import { getGroups, type WhatsAppGroup } from '../services/whatsappService'
+import { getGroups, sendTextMessage, sendMediaMessage, type WhatsAppGroup } from '../services/whatsappService'
 
 const TONE_OPTIONS: { id: CopyTone; label: string; emoji: string }[] = [
   { id: 'urgent', label: 'Urgente 🔥', emoji: '⚡' },
@@ -180,6 +180,70 @@ export default function NewPost() {
       setSelectedGroupIds([])
     } else {
       setSelectedGroupIds(availableGroups.map((g) => g.id))
+    }
+  }
+
+  const [sendingNow, setSendingNow] = useState(false)
+
+  const handleSendNow = async () => {
+    if (!copy.trim()) return
+    setSendingNow(true)
+    setError(null)
+    setSuccessMsg(null)
+
+    try {
+      const affiliateLink = affiliateTag ? `${url}?tag=${affiliateTag}` : url
+      const offerTitle = product?.title || 'Oferta de Afiliado'
+
+      let targetGroupIds: string[] = []
+      if (selectedTarget === 'all') {
+        targetGroupIds = ['all']
+      } else {
+        if (selectedGroupIds.length === 0) {
+          setError('Selecione pelo menos um grupo de destino para disparo.')
+          setSendingNow(false)
+          return
+        }
+        targetGroupIds = selectedGroupIds
+      }
+
+      // Dispara imediatamente para o(s) grupo(s) via backend
+      for (const groupId of targetGroupIds) {
+        if (customImage) {
+          await sendMediaMessage(groupId, customImage, copy, 'image')
+        } else {
+          await sendTextMessage(groupId, copy)
+        }
+      }
+
+      setSuccessMsg('🚀 Oferta disparada com sucesso para o(s) grupo(s)!')
+
+      // Registra como enviada no histórico
+      const existingQueue = loadQueue()
+      const newOfferPost: ScheduledPost = {
+        id: String(Date.now()),
+        offerId: String(Date.now()),
+        title: offerTitle,
+        copyText: copy,
+        imageUrl: customImage,
+        affiliateLink: affiliateLink,
+        channels: targetGroupIds.map((id) => ({
+          type: 'whatsapp',
+          targetId: id,
+          targetName: id === 'all' ? 'Todos os Grupos' : (availableGroups.find((g) => g.id === id)?.name || 'Grupo WhatsApp'),
+        })),
+        scheduledAt: new Date(),
+        status: 'sent',
+      }
+      saveQueue([...existingQueue, newOfferPost])
+
+      setTimeout(() => {
+        setActiveTab('history')
+      }, 1500)
+    } catch (err: any) {
+      setError(`Falha ao disparar oferta: ${err.message || 'Erro de envio no WhatsApp.'}`)
+    } finally {
+      setSendingNow(false)
     }
   }
 
@@ -712,15 +776,51 @@ export default function NewPost() {
           </div>
         )}
 
-        {/* Send Button */}
-        <button
-          className="btn-primary"
-          onClick={handleAddToQueue}
-          style={{ fontSize: 15, padding: '14px 24px', opacity: (!copy.trim()) ? 0.5 : 1 }}
-          disabled={!copy.trim()}
-        >
-          🚀 Adicionar à Fila de Envio
-        </button>
+        {/* Send Buttons */}
+        <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+          <button
+            className="btn-primary"
+            onClick={handleSendNow}
+            disabled={!copy.trim() || sendingNow}
+            style={{
+              flex: 1,
+              fontSize: 14,
+              padding: '14px 20px',
+              background: 'linear-gradient(135deg, #10b981, #059669)',
+              opacity: (!copy.trim() || sendingNow) ? 0.5 : 1,
+              cursor: (!copy.trim() || sendingNow) ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+            }}
+          >
+            {sendingNow ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={16} />}
+            {sendingNow ? 'Disparando...' : '⚡ Disparar Agora'}
+          </button>
+
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={handleAddToQueue}
+            disabled={!copy.trim() || sendingNow}
+            style={{
+              flex: 1,
+              fontSize: 14,
+              padding: '14px 20px',
+              border: '1px solid var(--border-color)',
+              opacity: (!copy.trim() || sendingNow) ? 0.5 : 1,
+              cursor: (!copy.trim() || sendingNow) ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              color: 'var(--text-primary)',
+            }}
+          >
+            📅 Agendar para a Fila
+          </button>
+        </div>
       </div>
 
       {/* Right Panel - Live Preview */}

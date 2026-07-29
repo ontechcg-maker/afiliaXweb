@@ -13,9 +13,23 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
 }
 
 export default function Header() {
-  const { activeTab, settings, setAuthenticated, theme, toggleTheme } = useApp()
+  const { activeTab, settings, saasAiInfo, setAuthenticated, theme, toggleTheme } = useApp()
   const page = PAGE_TITLES[activeTab] || { title: activeTab, subtitle: '' }
-  const aiLabel = settings.ai.provider.charAt(0).toUpperCase() + settings.ai.provider.slice(1)
+  
+  const provider = saasAiInfo?.provider || settings.ai.provider || 'gemini'
+  const model = saasAiInfo?.model || settings.ai.model || ''
+
+  let aiLabel = provider.charAt(0).toUpperCase() + provider.slice(1)
+  if (provider === 'gemini') {
+    aiLabel = model ? `Gemini (${model.replace('gemini-', '')})` : 'Google Gemini'
+  } else if (provider === 'openrouter') {
+    const shortModel = model ? model.split('/')[1] || model : ''
+    aiLabel = shortModel ? `OpenRouter (${shortModel.replace('-exp:free', '').replace(':free', '')})` : 'OpenRouter'
+  } else if (provider === 'openai') {
+    aiLabel = model ? `OpenAI (${model})` : 'OpenAI'
+  } else if (provider === 'ollama') {
+    aiLabel = 'Ollama (Local)'
+  }
 
   const handleLogout = () => {
     logout()
@@ -46,6 +60,7 @@ export default function Header() {
 
       {/* AI Provider Badge */}
       <div
+        title={`Inteligência Artificial ativa no SaaS: ${aiLabel}`}
         style={{
           display: 'flex',
           alignItems: 'center',

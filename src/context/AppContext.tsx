@@ -8,6 +8,7 @@ import {
   isAuthenticated,
   loadUserProfile,
   saveUserProfile,
+  authHeader,
   type UserProfile,
 } from '../services/authService'
 import { getConnectionStatus } from '../services/whatsappService'
@@ -28,6 +29,7 @@ interface AppContextType {
   user: User | null
   userProfile: UserProfile | null
   refreshProfile: () => Promise<void>
+  saasAiInfo: { provider: string; model: string } | null
   supabaseConnected: boolean
   evolutionConnected: boolean
   authenticated: boolean
@@ -52,6 +54,7 @@ const AppContext = createContext<AppContextType>({
   user: null,
   userProfile: null,
   refreshProfile: async () => {},
+  saasAiInfo: null,
   supabaseConnected: false,
   evolutionConnected: false,
   authenticated: false,
@@ -115,6 +118,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return defaultSettings
   })
 
+  const [saasAiInfo, setSaasAiInfo] = useState<{ provider: string; model: string } | null>(null)
+
+  const fetchSaaSInfo = async () => {
+    try {
+      const headers = await authHeader()
+      const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+      const res = await fetch(`${API_BASE_URL}/api/ai-info`, { headers })
+      const data = await res.json()
+      if (res.ok && data.provider) {
+        setSaasAiInfo({ provider: data.provider, model: data.model })
+      }
+    } catch {}
+  }
+
   // ─── Supabase Auth: detecta login/logout ─────────────────────
   useEffect(() => {
     if (!supabase) return
@@ -147,6 +164,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [authenticated, user?.id])
 
   const loadAndApplyProfile = async () => {
+    fetchSaaSInfo()
     const profile = await loadUserProfile()
     if (!profile) return
     setUserProfile(profile)
@@ -220,6 +238,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         user,
         userProfile,
         refreshProfile,
+        saasAiInfo,
         supabaseConnected,
         evolutionConnected,
         authenticated,

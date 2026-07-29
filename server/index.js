@@ -455,7 +455,33 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
 })
 
 
+// ─── Rota de Consulta da IA Ativa do SaaS (para Clientes) ─────────
+router.get('/ai-info', requireAuth, async (_req, res) => {
+  try {
+    const { aiProvider, aiModel } = await getSystemConfig()
+    res.json({ provider: aiProvider || 'gemini', model: aiModel || 'gemini-2.0-flash' })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // ─── Rotas WhatsApp (por usuário, via instância isolada) ─────────
+
+/** Helper: resolve grupo ou expande 'all' para a lista de JIDs reais da instância */
+async function resolveTargetGroups(instanceName, groupId) {
+  if (groupId === 'all' || !groupId) {
+    const groupData = await evolutionFetch(
+      `/group/fetchAllGroups/${instanceName}?getParticipants=false`
+    ).catch(() => null)
+    const list = Array.isArray(groupData) ? groupData
+      : groupData?.groups || groupData?.response || groupData?.data || []
+    return list
+      .map((g) => g.id || g.jid || g.groupJid || '')
+      .filter((id) => id.includes('@g.us'))
+  }
+  const target = groupId.includes('@') ? groupId : `${groupId}@g.us`
+  return [target]
+}
 
 /**
  * POST /whatsapp/connect
@@ -593,11 +619,30 @@ router.post('/whatsapp/send-text', requireAuth, async (req, res) => {
     if (!profile?.instance_name) {
       return res.status(400).json({ error: 'WhatsApp não conectado.' })
     }
-    const number = groupId.includes('@') ? groupId : `${groupId}@g.us`
-    await evolutionFetch(`/message/sendText/${profile.instance_name}`, 'POST', {
-      number, text, options: { delay: 1200, presence: 'composing' },
-    })
-    res.json({ success: true })
+
+    const targets = await resolveTargetGroups(profile.instance_name, groupId)
+    if (targets.length === 0) {
+      return res.status(400).json({ error: 'Nenhum grupo do WhatsApp encontrado para disparo.' })
+    }
+
+    let successCount = 0
+    let lastError = ''
+    for (const number of targets) {
+      try {
+        await evolutionFetch(`/message/sendText/${profile.instance_name}`, 'POST', {
+          number, text, options: { delay: 1200, presence: 'composing' },
+        })
+        successCount++
+      } catch (err) {
+        lastError = err.message
+      }
+    }
+
+    if (successCount === 0 && lastError) {
+      throw new Error(lastError)
+    }
+
+    res.json({ success: true, count: successCount })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
@@ -616,17 +661,43 @@ router.post('/whatsapp/send-media', requireAuth, async (req, res) => {
     if (!profile?.instance_name) {
       return res.status(400).json({ error: 'WhatsApp não conectado.' })
     }
-    const number = groupId.includes('@') ? groupId : `${groupId}@g.us`
-    await evolutionFetch(`/message/sendMedia/${profile.instance_name}`, 'POST', {
-      number,
+
+    const targets = await resolveTargetGroups(profile.instance_name, groupId)
+    if (targets.length === 0) {
+      return res.status(400).json({ error: 'Nenhum grupo do WhatsApp encontrado para disparo.' })
+    }
+
+    const isDataUri = mediaUrl.startsWith('data:')
+    const isHttp = mediaUrl.startsWith('http')
+
+    const payload = {
       mediatype: mediaType,
-      mediaUrl: mediaUrl.startsWith('http') ? mediaUrl : undefined,
-      media: mediaUrl.startsWith('data:') ? mediaUrl.split(',')[1] : undefined,
+      mediaUrl: isHttp ? mediaUrl : undefined,
+      media: isDataUri ? mediaUrl.split(',')[1] : undefined,
       caption: caption || '',
       fileName: mediaType === 'video' ? 'video.mp4' : 'imagem.jpg',
       mimetype: mediaType === 'video' ? 'video/mp4' : 'image/jpeg',
-    })
-    res.json({ success: true })
+    }
+
+    let successCount = 0
+    let lastError = ''
+    for (const number of targets) {
+      try {
+        await evolutionFetch(`/message/sendMedia/${profile.instance_name}`, 'POST', {
+          ...payload,
+          number,
+        })
+        successCount++
+      } catch (err) {
+        lastError = err.message
+      }
+    }
+
+    if (successCount === 0 && lastError) {
+      throw new Error(lastError)
+    }
+
+    res.json({ success: true, count: successCount })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
@@ -689,10 +760,13 @@ async function runScheduler() {
         const target = rawTarget.includes('@') ? rawTarget : `${rawTarget}@g.us`
         try {
           if (offer.image_url) {
+            const isDataUri = offer.image_url.startsWith('data:')
+            const isHttp = offer.image_url.startsWith('http')
             await evolutionFetch(`/message/sendMedia/${instanceName}`, 'POST', {
               number: target,
               mediatype: 'image',
-              mediaUrl: offer.image_url,
+              mediaUrl: isHttp ? offer.image_url : undefined,
+              media: isDataUri ? offer.image_url.split(',')[1] : undefined,
               caption: offer.copy_text || '',
               fileName: 'imagem.jpg',
               mimetype: 'image/jpeg',
@@ -707,8 +781,6 @@ async function runScheduler() {
           success = true
         } catch (e) {
           console.error(`[Scheduler] Erro envio para ${target}:`, e.message)
-        }
-      }
     }
 
     await supabaseAdmin
