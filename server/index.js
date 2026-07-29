@@ -498,9 +498,9 @@ async function keepAliveSupabase() {
   }
 }
 
-// Executa Keep-Alive imediatamente e depois a cada 4 horas (14.400.000 ms)
+// Executa Keep-Alive imediatamente e depois a cada 3 dias (3 * 24 * 60 * 60 * 1000 ms)
 keepAliveSupabase()
-setInterval(keepAliveSupabase, 4 * 60 * 60 * 1000)
+setInterval(keepAliveSupabase, 3 * 24 * 60 * 60 * 1000)
 
 // Inicia o Scheduler
 if (supabaseAdmin && EVOLUTION_BASE_URL) {
