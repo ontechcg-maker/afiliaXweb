@@ -299,47 +299,68 @@ function parseMercadoLivrePrice(html: string): { priceTo?: number; priceFrom?: n
   let priceTo: number | undefined
   let priceFrom: number | undefined
 
+  // 0. Procura no JSON interno da página (buy_box_winner, price, original_price)
+  const priceMatches = [...html.matchAll(/"price"\s*:\s*([0-9]+(?:\.[0-9]+)?)/gi)]
+  const origMatches = [...html.matchAll(/"original_price"\s*:\s*([0-9]+(?:\.[0-9]+)?)/gi)]
+
+  if (priceMatches.length > 0) {
+    const val = parseFloat(priceMatches[0][1])
+    if (!isNaN(val) && val > 0) priceTo = val
+  }
+
+  if (origMatches.length > 0) {
+    const val = parseFloat(origMatches[0][1])
+    if (!isNaN(val) && val > 0) priceFrom = val
+  }
+
   // Remove linhas de parcelamento (ex: "12x R$ 18,12" ou "10x R$ 20,00") para nunca confundir a parcela com o Preço POR!
   const cleanHtml = html.replace(/[0-9]{1,2}\s*x\s*R\$\s*[0-9.,]+/gi, '').replace(/[0-9]{1,2}x\s*sem\s*juros/gi, '')
 
-  // 1. Extrai preço riscado (Preço DE - Destaque em Azul)
-  const strikethroughMatch =
-    cleanHtml.match(/<(?:s|del)[^>]*class=["'][^"']*andes-money-amount[^"']*["'][^>]*>([\s\S]*?)<\/(?:s|del)>/i) ||
-    cleanHtml.match(/class=["'][^"']*ui-pdp-price__original-value[^"']*["'][^>]*>([\s\S]*?)<\/span>/i) ||
-    cleanHtml.match(/<s[^>]*>([\s\S]*?)<\/s>/i) ||
-    cleanHtml.match(/<del[^>]*>([\s\S]*?)<\/del>/i)
+  // 1. Extrai preço riscado (Preço DE)
+  if (!priceFrom) {
+    const strikethroughMatch =
+      cleanHtml.match(/<(?:s|del)[^>]*class=["'][^"']*andes-money-amount[^"']*["'][^>]*>([\s\S]*?)<\/(?:s|del)>/i) ||
+      cleanHtml.match(/class=["'][^"']*ui-pdp-price__original-value[^"']*["'][^>]*>([\s\S]*?)<\/span>/i) ||
+      cleanHtml.match(/<s[^>]*>([\s\S]*?)<\/s>/i) ||
+      cleanHtml.match(/<del[^>]*>([\s\S]*?)<\/del>/i)
 
-  if (strikethroughMatch) {
-    const sHtml = strikethroughMatch[1]
-    const frac = sHtml.match(/class=["'][^"']*andes-money-amount__fraction[^"']*["'][^>]*>([0-9.]+)</i)?.[1] ||
-                 sHtml.match(/R\$\s*([0-9.]+)/i)?.[1]
-    const cents = sHtml.match(/class=["'][^"']*andes-money-amount__cents[^"']*["'][^>]*>([0-9]+)</i)?.[1]
-    if (frac) {
-      priceFrom = parseFloat(`${frac.replace(/\./g, '')}.${cents || '00'}`)
+    if (strikethroughMatch) {
+      const sHtml = strikethroughMatch[1]
+      const frac = sHtml.match(/andes-money-amount__fraction[^>]*>([0-9.]+)</i)?.[1] ||
+                   sHtml.match(/R\$\s*([0-9.]+)/i)?.[1]
+      const cents = sHtml.match(/andes-money-amount__cents[^>]*>([0-9]+)</i)?.[1]
+      if (frac) {
+        priceFrom = parseFloat(`${frac.replace(/\./g, '')}.${cents || '00'}`)
+      }
     }
   }
 
-  // 2. Extrai preço principal da oferta (Preço POR - Destaque em Amarelo)
-  const mainPriceMatch =
-    cleanHtml.match(/class=["'][^"']*(?:ui-pdp-price__second-line|andes-money-amount--main)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span)>/i) ||
-    cleanHtml.match(/class=["'][^"']*andes-money-amount[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)
+  // 2. Extrai preço principal da oferta (Preço POR)
+  if (!priceTo) {
+    const mainPriceMatch =
+      cleanHtml.match(/class=["'][^"']*(?:ui-pdp-price__second-line|andes-money-amount--main)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span)>/i) ||
+      cleanHtml.match(/class=["'][^"']*andes-money-amount[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)
 
-  if (mainPriceMatch) {
-    const mainHtml = mainPriceMatch[1]
-    const frac = mainHtml.match(/class=["'][^"']*andes-money-amount__fraction[^"']*["'][^>]*>([0-9.]+)</i)?.[1]
-    const cents = mainHtml.match(/class=["'][^"']*andes-money-amount__cents[^"']*["'][^>]*>([0-9]+)</i)?.[1]
-    if (frac) {
-      priceTo = parseFloat(`${frac.replace(/\./g, '')}.${cents || '00'}`)
+    if (mainPriceMatch) {
+      const mainHtml = mainPriceMatch[1]
+      const frac = mainHtml.match(/andes-money-amount__fraction[^>]*>([0-9.]+)</i)?.[1]
+      const cents = mainHtml.match(/andes-money-amount__cents[^>]*>([0-9]+)</i)?.[1]
+      if (frac) {
+        priceTo = parseFloat(`${frac.replace(/\./g, '')}.${cents || '00'}`)
+      }
     }
   }
 
   // 3. Fallback: Busca genérica pelas frações "andes-money-amount__fraction"
   if (!priceTo) {
-    const allFractions = Array.from(cleanHtml.matchAll(/class=["'][^"']*andes-money-amount__fraction[^"']*["'][^>]*>([0-9.]+)</gi))
+    const allFractions = Array.from(cleanHtml.matchAll(/andes-money-amount__fraction[^>]*>([0-9.]+)</gi))
+    const allCents = Array.from(cleanHtml.matchAll(/andes-money-amount__cents[^>]*>([0-9]+)</gi))
     if (allFractions.length > 0) {
-      const firstVal = parseFloat(allFractions[0][1].replace(/\./g, ''))
-      if (!isNaN(firstVal) && firstVal > 0) {
-        priceTo = firstVal
+      const firstVal = allFractions[0][1].replace(/\./g, '')
+      const firstCents = allCents.length > 0 ? allCents[0][1] : '00'
+      const parsed = parseFloat(`${firstVal}.${firstCents}`)
+      if (!isNaN(parsed) && parsed > 0) {
+        priceTo = parsed
       }
     }
   }

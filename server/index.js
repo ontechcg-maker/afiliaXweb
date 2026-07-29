@@ -139,13 +139,16 @@ async function getUserProfile(userParam) {
 }
 
 // ─── Helper: busca configurações do sistema salvas no banco ─────
+// ─── Helper: busca configurações do sistema salvas no banco ─────
 async function getSystemConfig() {
   let baseUrl = (EVOLUTION_BASE_URL || '').replace(/\/manager.*$/i, '').replace(/\/$/, '')
   let apiKey = EVOLUTION_API_KEY
   let openrouterKey = process.env.OPENROUTER_API_KEY || ''
   let geminiKey = process.env.GEMINI_API_KEY || ''
-  let aiProvider = 'auto'
+  let openaiKey = process.env.OPENAI_API_KEY || ''
+  let aiProvider = 'openrouter'
   let aiModel = 'google/gemini-2.0-flash-exp:free'
+  let customModel = ''
 
   if (supabaseAdmin) {
     try {
@@ -156,12 +159,21 @@ async function getSystemConfig() {
         if (map.evolution_api_key) apiKey = map.evolution_api_key.trim()
         if (map.openrouter_api_key) openrouterKey = map.openrouter_api_key.trim()
         if (map.gemini_api_key) geminiKey = map.gemini_api_key.trim()
+        if (map.openai_api_key) openaiKey = map.openai_api_key.trim()
         if (map.ai_provider) aiProvider = map.ai_provider.trim()
         if (map.ai_model) aiModel = map.ai_model.trim()
+        if (map.custom_model) customModel = map.custom_model.trim()
       }
     } catch {}
   }
-  return { baseUrl, apiKey, openrouterKey, geminiKey, aiProvider, aiModel }
+
+  // Se o modelo selecionado for __custom__, usa o customModel salvo
+  let effectiveModel = aiModel
+  if (aiModel === '__custom__' || !aiModel) {
+    effectiveModel = customModel || 'google/gemini-2.0-flash-exp:free'
+  }
+
+  return { baseUrl, apiKey, openrouterKey, geminiKey, openaiApiKey: openaiKey, aiProvider, aiModel: effectiveModel, customModel }
 }
 
 // ─── Helper: chama Evolution API ────────────────────────────────
@@ -349,12 +361,37 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
   const { prompt } = req.body || {}
   if (!prompt) return res.status(400).json({ error: 'Prompt não fornecido.' })
 
-  const { openrouterKey, geminiKey, aiProvider, aiModel } = await getSystemConfig()
+  const { openrouterKey, geminiKey, openaiApiKey, aiProvider, aiModel } = await getSystemConfig()
 
   try {
-    // 1. Provedor Gemini Direto se selecionado e com chave
-    if ((aiProvider === 'gemini' || !openrouterKey) && geminiKey) {
-      const targetModel = aiModel && aiModel.startsWith('gemini') ? aiModel : 'gemini-1.5-flash'
+    // 1. Provedor OpenAI se selecionado
+    if (aiProvider === 'openai' && openaiApiKey) {
+      const targetModel = aiModel && !aiModel.includes('/') ? aiModel : 'gpt-4o-mini'
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiApiKey.trim()}`,
+        },
+        body: JSON.stringify({
+          model: targetModel,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 500,
+          temperature: 0.7,
+        }),
+      })
+      const data = await response.json()
+      if (response.ok && data.choices?.[0]?.message?.content) {
+        return res.json({ copy: data.choices[0].message.content })
+      }
+      if (data.error?.message) {
+        throw new Error(`Erro na OpenAI (${targetModel}): ${data.error.message}`)
+      }
+    }
+
+    // 2. Provedor Gemini Direto se selecionado e com chave
+    if ((aiProvider === 'gemini' || (!openrouterKey && !openaiApiKey)) && geminiKey) {
+      const targetModel = aiModel && !aiModel.includes('/') ? aiModel : 'gemini-1.5-flash'
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${geminiKey.trim()}`,
         {
@@ -372,7 +409,7 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
       }
     }
 
-    // 2. OpenRouter (Suporta qualquer modelo: DeepSeek, Llama, Gemini, Claude, etc.)
+    // 3. Provedor OpenRouter (Suporta qualquer modelo: DeepSeek, Llama, Gemini, Claude, etc.)
     const targetOpenRouterModel = aiModel || 'google/gemini-2.0-flash-exp:free'
     const headers = {
       'Content-Type': 'application/json',
@@ -407,6 +444,7 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
     res.status(500).json({ error: e.message || 'Erro ao gerar copy por IA.' })
   }
 })
+
 
 // ─── Rotas WhatsApp (por usuário, via instância isolada) ─────────
 
