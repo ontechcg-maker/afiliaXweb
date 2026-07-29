@@ -298,21 +298,45 @@ function parseMercadoLivrePrice(html: string): { priceTo?: number; priceFrom?: n
   let priceTo: number | undefined
   let priceFrom: number | undefined
 
-  // 1. Extração via meta tags (og:price:amount ou itemprop="price")
-  const metaPriceTo =
-    html.match(/<meta[^>]*property=["']og:price:amount["'][^>]*content=["']([0-9.,]+)["']/i)?.[1] ||
-    html.match(/<meta[^>]*content=["']([0-9.,]+)["'][^>]*property=["']og:price:amount["']/i)?.[1] ||
-    html.match(/<meta[^>]*itemprop=["']price["'][^>]*content=["']([0-9.,]+)["']/i)?.[1] ||
-    html.match(/<meta[^>]*content=["']([0-9.,]+)["'][^>]*itemprop=["']price["']/i)?.[1]
+  // Remove trechos de parcelamento (ex: "12x R$ 18,12") para não confundir a parcela com o Preço POR
+  const cleanHtml = html.replace(/[0-9]{1,2}\s*x\s*R\$\s*[0-9.,]+/gi, '').replace(/[0-9]{1,2}x\s*sem\s*juros/gi, '')
 
-  if (metaPriceTo) {
-    const val = parseFloat(metaPriceTo.replace('.', '').replace(',', '.'))
-    if (!isNaN(val) && val > 0) {
-      priceTo = val
+  // 1. Extração por classes específicas do Mercado Livre (andes-money-amount--previous / andes-money-amount--main)
+  const prevBlockMatch = cleanHtml.match(/andes-money-amount--(?:previous|original)[^>]*>([\s\S]*?)(?:<\/div>|class=["'][^"']*andes-money-amount)/i)
+  if (prevBlockMatch) {
+    const frac = prevBlockMatch[1].match(/andes-money-amount__fraction[^>]*>([0-9.]+)</i)?.[1]
+    const cents = prevBlockMatch[1].match(/andes-money-amount__cents[^>]*>([0-9]+)</i)?.[1]
+    if (frac) {
+      priceFrom = parseFloat(`${frac.replace(/\./g, '')}.${cents || '00'}`)
     }
   }
 
-  // 2. Extração via JSON-LD (<script type="application/ld+json">)
+  const mainBlockMatch = cleanHtml.match(/andes-money-amount--main[^>]*>([\s\S]*?)(?:<\/div>|class=["'][^"']*andes-money-amount)/i)
+  if (mainBlockMatch) {
+    const frac = mainBlockMatch[1].match(/andes-money-amount__fraction[^>]*>([0-9.]+)</i)?.[1]
+    const cents = mainBlockMatch[1].match(/andes-money-amount__cents[^>]*>([0-9]+)</i)?.[1]
+    if (frac) {
+      priceTo = parseFloat(`${frac.replace(/\./g, '')}.${cents || '00'}`)
+    }
+  }
+
+  // 2. Extração via meta tags (og:price:amount ou itemprop="price")
+  if (!priceTo) {
+    const metaPriceTo =
+      html.match(/<meta[^>]*property=["']og:price:amount["'][^>]*content=["']([0-9.,]+)["']/i)?.[1] ||
+      html.match(/<meta[^>]*content=["']([0-9.,]+)["'][^>]*property=["']og:price:amount["']/i)?.[1] ||
+      html.match(/<meta[^>]*itemprop=["']price["'][^>]*content=["']([0-9.,]+)["']/i)?.[1] ||
+      html.match(/<meta[^>]*content=["']([0-9.,]+)["'][^>]*itemprop=["']price["']/i)?.[1]
+
+    if (metaPriceTo) {
+      const val = parseFloat(metaPriceTo.replace('.', '').replace(',', '.'))
+      if (!isNaN(val) && val > 0) {
+        priceTo = val
+      }
+    }
+  }
+
+  // 3. Extração via JSON-LD (<script type="application/ld+json">)
   if (!priceTo) {
     const ldMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)
     if (ldMatches) {
@@ -337,85 +361,30 @@ function parseMercadoLivrePrice(html: string): { priceTo?: number; priceFrom?: n
     }
   }
 
-  // 3. Procura no JSON interno de estado da página ("price" / "original_price")
+  // 4. Mapeamento direto de todas as frações andes-money-amount__fraction no documento
   if (!priceTo) {
-    const priceMatches = [...html.matchAll(/"price"\s*:\s*([0-9]+(?:\.[0-9]+)?)/gi)]
-    const origMatches = [...html.matchAll(/"original_price"\s*:\s*([0-9]+(?:\.[0-9]+)?)/gi)]
+    const fractionMatches = [...cleanHtml.matchAll(/andes-money-amount__fraction[^>]*>([0-9.]+)</gi)]
+    const centsMatches = [...cleanHtml.matchAll(/andes-money-amount__cents[^>]*>([0-9]+)</gi)]
 
-    if (priceMatches.length > 0) {
-      for (const match of priceMatches) {
-        const val = parseFloat(match[1])
-        if (!isNaN(val) && val > 0 && val < 500000) {
-          priceTo = val
-          break
-        }
+    const values: number[] = []
+    fractionMatches.forEach((m, i) => {
+      const valStr = m[1].replace(/\./g, '')
+      const centsStr = centsMatches[i] ? centsMatches[i][1] : '00'
+      const val = parseFloat(`${valStr}.${centsStr}`)
+      if (!isNaN(val) && val > 0 && val < 500000 && !values.includes(val)) {
+        values.push(val)
       }
-    }
+    })
 
-    if (origMatches.length > 0) {
-      for (const match of origMatches) {
-        const val = parseFloat(match[1])
-        if (!isNaN(val) && val > 0 && val < 500000) {
-          priceFrom = val
-          break
-        }
-      }
+    if (values.length >= 2) {
+      if (!priceFrom) priceFrom = values[0]
+      priceTo = values[1]
+    } else if (values.length === 1) {
+      priceTo = values[0]
     }
   }
 
-  // Remove linhas de parcelamento (ex: "12x R$ 18,12") para não confundir com o Preço POR
-  const cleanHtml = html.replace(/[0-9]{1,2}\s*x\s*R\$\s*[0-9.,]+/gi, '').replace(/[0-9]{1,2}x\s*sem\s*juros/gi, '')
-
-  // 4. Extrai preço riscado (Preço DE) da estrutura HTML do Mercado Livre
-  if (!priceFrom) {
-    const strikethroughMatch =
-      cleanHtml.match(/<(?:s|del)[^>]*class=["'][^"']*andes-money-amount[^"']*["'][^>]*>([\s\S]*?)<\/(?:s|del)>/i) ||
-      cleanHtml.match(/class=["'][^"']*ui-pdp-price__original-value[^"']*["'][^>]*>([\s\S]*?)<\/span>/i) ||
-      cleanHtml.match(/<s[^>]*>([\s\S]*?)<\/s>/i) ||
-      cleanHtml.match(/<del[^>]*>([\s\S]*?)<\/del>/i)
-
-    if (strikethroughMatch) {
-      const sHtml = strikethroughMatch[1]
-      const frac = sHtml.match(/andes-money-amount__fraction[^>]*>([0-9.]+)</i)?.[1] ||
-                   sHtml.match(/R\$\s*([0-9.]+)/i)?.[1]
-      const cents = sHtml.match(/andes-money-amount__cents[^>]*>([0-9]+)</i)?.[1]
-      if (frac) {
-        priceFrom = parseFloat(`${frac.replace(/\./g, '')}.${cents || '00'}`)
-      }
-    }
-  }
-
-  // 5. Extrai preço principal da oferta (Preço POR) da estrutura HTML do Mercado Livre
-  if (!priceTo) {
-    const mainPriceMatch =
-      cleanHtml.match(/class=["'][^"']*(?:ui-pdp-price__second-line|andes-money-amount--main|ui-pdp-price__part)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span)>/i) ||
-      cleanHtml.match(/class=["'][^"']*andes-money-amount[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)
-
-    if (mainPriceMatch) {
-      const mainHtml = mainPriceMatch[1]
-      const frac = mainHtml.match(/andes-money-amount__fraction[^>]*>([0-9.]+)</i)?.[1]
-      const cents = mainHtml.match(/andes-money-amount__cents[^>]*>([0-9]+)</i)?.[1]
-      if (frac) {
-        priceTo = parseFloat(`${frac.replace(/\./g, '')}.${cents || '00'}`)
-      }
-    }
-  }
-
-  // 6. Fallback final: Busca pelas frações "andes-money-amount__fraction"
-  if (!priceTo) {
-    const allFractions = Array.from(cleanHtml.matchAll(/andes-money-amount__fraction[^>]*>([0-9.]+)</gi))
-    const allCents = Array.from(cleanHtml.matchAll(/andes-money-amount__cents[^>]*>([0-9]+)</gi))
-    if (allFractions.length > 0) {
-      const firstVal = allFractions[0][1].replace(/\./g, '')
-      const firstCents = allCents.length > 0 ? allCents[0][1] : '00'
-      const parsed = parseFloat(`${firstVal}.${firstCents}`)
-      if (!isNaN(parsed) && parsed > 0) {
-        priceTo = parsed
-      }
-    }
-  }
-
-  // Regra fundamental: Se tiver apenas 1 preço capturado, ele SEMPRE deve ser o "Preço POR" (Amarelo)
+  // Regra fundamental: Se tiver apenas 1 preço capturado, ele SEMPRE deve ser o "Preço POR"
   if (!priceTo && priceFrom) {
     priceTo = priceFrom
     priceFrom = undefined
