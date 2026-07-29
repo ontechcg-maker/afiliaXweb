@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { Link2, Sparkles, Image, Upload, X, Copy, Check, Loader, CheckCircle, Users, Send } from 'lucide-react'
+import { Link2, Sparkles, Image, Upload, X, Copy, Check, Loader, CheckCircle, Users, Send, MessageSquare, ShieldCheck } from 'lucide-react'
 import { scrapeProduct, type ScrapedProduct } from '../services/scraperService'
-import { generateCopy, type CopyTone } from '../services/aiService'
+import { generateCopy, formatCustomTemplate, type CopyTone } from '../services/aiService'
 import { useApp } from '../context/AppContext'
 import MockupPreview from '../components/MockupPreview'
 import { calculateNextScheduleTime, loadQueue, saveQueue, type ScheduledPost } from '../services/schedulerService'
 import { getSupabaseClient } from '../services/supabaseClient'
-import { getGroups, sendTextMessage, sendMediaMessage, type WhatsAppGroup } from '../services/whatsappService'
+import { getGroups, sendTextMessage, sendMediaMessage, getRandomAntiBanDelay, delay, type WhatsAppGroup } from '../services/whatsappService'
+import { getDiscordChannels, sendDiscordMessage, type DiscordChannel } from '../services/discordService'
 
 const TONE_OPTIONS: { id: CopyTone; label: string; emoji: string }[] = [
   { id: 'urgent', label: 'Urgente 🔥', emoji: '⚡' },
@@ -37,15 +38,19 @@ export default function NewPost() {
   const [product, setProduct] = useState<ScrapedProduct | null>(null)
   const [copy, setCopy] = useState('')
   const [tone, setTone] = useState<CopyTone>('urgent')
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [customImage, setCustomImage] = useState<string | undefined>()
   const [loading, setLoading] = useState(false)
   const [generatingCopy, setGeneratingCopy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [antiBanProgressMsg, setAntiBanProgressMsg] = useState<string | null>(null)
 
   // Seleção de Grupos / Canais
   const [availableGroups, setAvailableGroups] = useState<WhatsAppGroup[]>([])
+  const [availableDiscordChannels] = useState<DiscordChannel[]>(() => getDiscordChannels())
+  const [selectedDiscordIds, setSelectedDiscordIds] = useState<string[]>([])
   const [loadingGroups, setLoadingGroups] = useState<boolean>(false)
   const [selectedTarget, setSelectedTarget] = useState<'all' | 'custom'>('custom')
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
@@ -115,20 +120,27 @@ export default function NewPost() {
     setSuccessMsg(null)
     try {
       const finalLink = affiliateTag ? `${url}?tag=${affiliateTag}` : url
+      const productWithLink = {
+        title: product.title,
+        priceFrom: product.priceFrom,
+        priceTo: product.priceTo,
+        discountPct: product.discountPct,
+        coupon: product.coupon,
+        rating: product.rating,
+        affiliateLink: finalLink,
+      }
 
-      const result = await generateCopy(
-        {
-          title: product.title,
-          priceFrom: product.priceFrom,
-          priceTo: product.priceTo,
-          discountPct: product.discountPct,
-          coupon: product.coupon,
-          rating: product.rating,
-          affiliateLink: finalLink,
-        },
-        tone,
-        settings.ai
-      )
+      // Se um template customizado do Prompt Studio foi selecionado
+      if (selectedTemplateId) {
+        const found = (settings.customTemplates || []).find((t) => t.id === selectedTemplateId)
+        if (found) {
+          const formatted = formatCustomTemplate(found.template, productWithLink)
+          setCopy(formatted)
+          return
+        }
+      }
+
+      const result = await generateCopy(productWithLink, tone, settings.ai)
       setCopy(result.trim())
     } catch (err: any) {
       setError(err.message || 'Erro ao gerar copy. Verifique a chave de API.')
@@ -174,6 +186,12 @@ export default function NewPost() {
     )
   }
 
+  const toggleDiscordSelection = (discordId: string) => {
+    setSelectedDiscordIds((prev) =>
+      prev.includes(discordId) ? prev.filter((id) => id !== discordId) : [...prev, discordId]
+    )
+  }
+
   const handleSelectAllCustomGroups = () => {
     setSelectedTarget('custom')
     if (selectedGroupIds.length === availableGroups.length) {
@@ -190,6 +208,7 @@ export default function NewPost() {
     setSendingNow(true)
     setError(null)
     setSuccessMsg(null)
+    setAntiBanProgressMsg(null)
 
     try {
       const affiliateLink = affiliateTag ? `${url}?tag=${affiliateTag}` : url
@@ -199,24 +218,59 @@ export default function NewPost() {
       if (selectedTarget === 'all') {
         targetGroupIds = ['all']
       } else {
-        if (selectedGroupIds.length === 0) {
-          setError('Selecione pelo menos um grupo de destino para disparo.')
-          setSendingNow(false)
-          return
-        }
         targetGroupIds = selectedGroupIds
       }
 
-      // Dispara imediatamente para o(s) grupo(s) via backend
-      for (const groupId of targetGroupIds) {
-        if (customImage) {
-          await sendMediaMessage(groupId, customImage, copy, 'image')
-        } else {
-          await sendTextMessage(groupId, copy)
+      if (targetGroupIds.length === 0 && selectedDiscordIds.length === 0 && !sendToTelegram) {
+        setError('Selecione pelo menos um destino para disparo.')
+        setSendingNow(false)
+        return
+      }
+
+      // 1. WhatsApp Dispatch com Anti-Ban Guard
+      if (targetGroupIds.length > 0) {
+        const antiBan = settings.antiBan ?? { enabled: true, minDelaySeconds: 15, maxDelaySeconds: 45 }
+        for (let i = 0; i < targetGroupIds.length; i++) {
+          const groupId = targetGroupIds[i]
+          const groupName = groupId === 'all' ? 'Todos os Grupos' : (availableGroups.find((g) => g.id === groupId)?.name || 'Grupo WhatsApp')
+
+          if (i > 0 && antiBan.enabled && targetGroupIds.length > 1) {
+            const delayMs = getRandomAntiBanDelay(antiBan.minDelaySeconds, antiBan.maxDelaySeconds)
+            setAntiBanProgressMsg(`🛡️ Anti-Ban Guard: aguardando ${(delayMs / 1000).toFixed(0)}s antes de enviar para "${groupName}"...`)
+            await delay(delayMs)
+          }
+
+          setAntiBanProgressMsg(`Enviando WhatsApp para "${groupName}"...`)
+          if (customImage) {
+            await sendMediaMessage(groupId, customImage, copy, 'image')
+          } else {
+            await sendTextMessage(groupId, copy)
+          }
         }
       }
 
-      setSuccessMsg('🚀 Oferta disparada com sucesso para o(s) grupo(s)!')
+      // 2. Discord Dispatch
+      if (selectedDiscordIds.length > 0) {
+        for (const discId of selectedDiscordIds) {
+          const channel = availableDiscordChannels.find((c) => c.id === discId)
+          if (channel) {
+            setAntiBanProgressMsg(`Enviando Discord para "${channel.name}"...`)
+            await sendDiscordMessage(channel.webhookUrl, {
+              title: offerTitle,
+              priceFrom: product?.priceFrom,
+              priceTo: product?.priceTo,
+              discountPct: product?.discountPct,
+              coupon: product?.coupon,
+              imageUrl: customImage,
+              affiliateLink: affiliateLink,
+              copyText: copy,
+            })
+          }
+        }
+      }
+
+      setAntiBanProgressMsg(null)
+      setSuccessMsg('🚀 Oferta disparada com sucesso para os destinos selecionados!')
 
       // Registra como enviada no histórico
       const existingQueue = loadQueue()
@@ -227,11 +281,18 @@ export default function NewPost() {
         copyText: copy,
         imageUrl: customImage,
         affiliateLink: affiliateLink,
-        channels: targetGroupIds.map((id) => ({
-          type: 'whatsapp',
-          targetId: id,
-          targetName: id === 'all' ? 'Todos os Grupos' : (availableGroups.find((g) => g.id === id)?.name || 'Grupo WhatsApp'),
-        })),
+        channels: [
+          ...targetGroupIds.map((id) => ({
+            type: 'whatsapp' as const,
+            targetId: id,
+            targetName: id === 'all' ? 'Todos os Grupos' : (availableGroups.find((g) => g.id === id)?.name || 'Grupo WhatsApp'),
+          })),
+          ...selectedDiscordIds.map((id) => ({
+            type: 'discord' as const,
+            targetId: id,
+            targetName: availableDiscordChannels.find((c) => c.id === id)?.name || 'Canal Discord',
+          })),
+        ],
         scheduledAt: new Date(),
         status: 'sent',
       }
@@ -241,9 +302,10 @@ export default function NewPost() {
         setActiveTab('history')
       }, 1500)
     } catch (err: any) {
-      setError(`Falha ao disparar oferta: ${err.message || 'Erro de envio no WhatsApp.'}`)
+      setError(`Falha ao disparar oferta: ${err.message || 'Erro de envio.'}`)
     } finally {
       setSendingNow(false)
+      setAntiBanProgressMsg(null)
     }
   }
 
@@ -253,15 +315,11 @@ export default function NewPost() {
     const affiliateLink = affiliateTag ? `${url}?tag=${affiliateTag}` : url
     const offerTitle = product?.title || 'Oferta de Afiliado'
 
-    const channels: { type: 'whatsapp' | 'telegram'; targetId: string; targetName: string }[] = []
+    const channels: { type: 'whatsapp' | 'telegram' | 'discord'; targetId: string; targetName: string }[] = []
 
     if (selectedTarget === 'all') {
       channels.push({ type: 'whatsapp', targetId: 'all', targetName: 'Todos os Grupos do WhatsApp' })
     } else {
-      if (selectedGroupIds.length === 0) {
-        setError('Selecione pelo menos um grupo específico para envio.')
-        return
-      }
       selectedGroupIds.forEach((id) => {
         const found = availableGroups.find((g) => g.id === id)
         channels.push({
@@ -272,8 +330,22 @@ export default function NewPost() {
       })
     }
 
+    selectedDiscordIds.forEach((id) => {
+      const found = availableDiscordChannels.find((c) => c.id === id)
+      channels.push({
+        type: 'discord',
+        targetId: id,
+        targetName: found?.name || 'Canal Discord',
+      })
+    })
+
     if (sendToTelegram) {
       channels.push({ type: 'telegram', targetId: 'all', targetName: 'Canal do Telegram' })
+    }
+
+    if (channels.length === 0) {
+      setError('Selecione pelo menos um destino (WhatsApp, Discord ou Telegram) para agendar.')
+      return
     }
 
     const existingQueue = loadQueue()
@@ -538,15 +610,18 @@ export default function NewPost() {
             {TONE_OPTIONS.map((t) => (
               <button
                 key={t.id}
-                onClick={() => setTone(t.id)}
+                onClick={() => {
+                  setTone(t.id)
+                  setSelectedTemplateId('')
+                }}
                 style={{
                   padding: '6px 14px',
                   borderRadius: 8,
-                  border: tone === t.id ? '1px solid rgba(34,211,238,0.5)' : '1px solid #2a2a2a',
-                  background: tone === t.id ? 'rgba(34,211,238,0.08)' : 'transparent',
-                  color: tone === t.id ? '#22d3ee' : '#737373',
+                  border: tone === t.id && !selectedTemplateId ? '1px solid rgba(34,211,238,0.5)' : '1px solid #2a2a2a',
+                  background: tone === t.id && !selectedTemplateId ? 'rgba(34,211,238,0.08)' : 'transparent',
+                  color: tone === t.id && !selectedTemplateId ? '#22d3ee' : '#737373',
                   fontSize: 12,
-                  fontWeight: tone === t.id ? 600 : 400,
+                  fontWeight: tone === t.id && !selectedTemplateId ? 600 : 400,
                   cursor: 'pointer',
                   fontFamily: 'Inter, sans-serif',
                   transition: 'all 0.15s',
@@ -556,6 +631,39 @@ export default function NewPost() {
               </button>
             ))}
           </div>
+
+          {/* Prompt Studio Templates Selector */}
+          {(settings.customTemplates || []).length > 0 && (
+            <div style={{ marginBottom: 14, padding: '10px 12px', background: 'rgba(99,102,241,0.05)', borderRadius: 10, border: '1px solid rgba(99,102,241,0.15)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#818cf8', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Sparkles size={12} /> Prompt Studio — Seus Templates Salvos:
+                </span>
+                {selectedTemplateId && (
+                  <button
+                    className="btn-ghost"
+                    onClick={() => setSelectedTemplateId('')}
+                    style={{ fontSize: 10, padding: '2px 6px' }}
+                  >
+                    Usar Estilo Padrão
+                  </button>
+                )}
+              </div>
+              <select
+                className="input-glass"
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+                style={{ fontSize: 12, padding: '6px 10px' }}
+              >
+                <option value="">-- Selecionar um Template Customizado --</option>
+                {settings.customTemplates.map((tmpl) => (
+                  <option key={tmpl.id} value={tmpl.id}>
+                    ✨ {tmpl.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <textarea
             className="input-glass"
@@ -723,7 +831,7 @@ export default function NewPost() {
                   background: sendToTelegram ? 'rgba(42,171,238,0.08)' : 'rgba(255,255,255,0.02)',
                   border: sendToTelegram ? '1px solid rgba(42,171,238,0.4)' : '1px solid #2a2a2a',
                   cursor: 'pointer',
-                  marginTop: 6,
+                  marginTop: 4,
                 }}
               >
                 <input
@@ -737,8 +845,69 @@ export default function NewPost() {
                 </span>
               </label>
             )}
+
+            {/* Option: Discord Webhooks */}
+            {availableDiscordChannels.length > 0 && (
+              <div style={{ marginTop: 6, background: 'rgba(88,101,242,0.05)', border: '1px solid rgba(88,101,242,0.2)', borderRadius: 10, padding: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <MessageSquare size={16} color="#5865F2" />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    🎮 Canais do Discord Webhook ({selectedDiscordIds.length} selecionados)
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 140, overflowY: 'auto' }}>
+                  {availableDiscordChannels.map((ch) => {
+                    const isChecked = selectedDiscordIds.includes(ch.id)
+                    return (
+                      <label
+                        key={ch.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '6px 10px',
+                          borderRadius: 6,
+                          background: isChecked ? 'rgba(88,101,242,0.12)' : 'transparent',
+                          border: isChecked ? '1px solid rgba(88,101,242,0.3)' : '1px solid #1a1a1a',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleDiscordSelection(ch.id)}
+                        />
+                        <span style={{ fontSize: 12, color: isChecked ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                          💬 {ch.name}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Anti-Ban Progress Notice */}
+        {antiBanProgressMsg && (
+          <div
+            style={{
+              background: 'rgba(234,179,8,0.1)',
+              border: '1px solid rgba(234,179,8,0.3)',
+              borderRadius: 10,
+              padding: '12px 16px',
+              fontSize: 13,
+              color: '#eab308',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <ShieldCheck size={18} color="#eab308" />
+            <span>{antiBanProgressMsg}</span>
+          </div>
+        )}
 
         {/* Error */}
         {error && (

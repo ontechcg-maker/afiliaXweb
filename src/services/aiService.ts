@@ -79,8 +79,28 @@ Caiu de ~R$ 68,90~ por só *R$ 55,12*!
 👉 Vem ver antes que minha mãe use tudo: [Link]`,
 }
 
-function buildPrompt(product: ProductData, tone: CopyTone): string {
-  const toneInstructions = TONE_PROMPTS[tone]
+export function formatCustomTemplate(template: string, product: ProductData): string {
+  const priceFromFormatted = product.priceFrom && product.priceFrom > 0
+    ? `R$ ${product.priceFrom.toFixed(2).replace('.', ',')}`
+    : ''
+  const priceToFormatted = product.priceTo && product.priceTo > 0
+    ? `R$ ${product.priceTo.toFixed(2).replace('.', ',')}`
+    : ''
+  const discountFormatted = product.discountPct ? `${product.discountPct}%` : ''
+  const couponFormatted = product.coupon ? `🎟️ Cupom: *${product.coupon}*` : ''
+
+  return template
+    .replace(/\{PRODUTO\}|\{NOME_PRODUTO\}/g, product.title || '')
+    .replace(/\{PRECO_DE\}/g, priceFromFormatted)
+    .replace(/\{PRECO_POR\}/g, priceToFormatted)
+    .replace(/\{DESCONTO\}/g, discountFormatted)
+    .replace(/\{CUPOM\}/g, couponFormatted)
+    .replace(/\{LINK\}|\{LINK_AFILIADO\}/g, product.affiliateLink || '')
+    .trim()
+}
+
+function buildPrompt(product: ProductData, tone: CopyTone | string): string {
+  const toneInstructions = TONE_PROMPTS[tone as CopyTone] || tone
   return `Escreva UMA MENSAGEM DIRETA de vendas de afiliados para WhatsApp em português do Brasil.
 
 PROIBIDO: NÃO escreva palavras em inglês como "Result:", "Scarcity:", "Proof:", "Hook:", "Drafting:", "Constraints:". Escreva APENAS o texto corrido da mensagem.
@@ -91,7 +111,7 @@ Diretrizes da Mensagem:
 - Formatação WhatsApp: Use *negrito* em preços promocionais e nomes, ~riscado~ em preços antigos.
 - CTA no final: Termine exatamente com a chamada e o link na última linha.
 
-Abordagem Desejada:
+Abordagem Desejada / Instruções do Modelo:
 ${toneInstructions}
 
 Dados do Produto:
@@ -143,7 +163,7 @@ import { getApiUrl } from './apiUrl'
 
 export async function generateCopy(
   product: ProductData,
-  tone: CopyTone,
+  tone: CopyTone | string,
   config?: AIConfig
 ): Promise<string> {
   const prompt = buildPrompt(product, tone)

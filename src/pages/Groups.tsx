@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { RefreshCw, QrCode, Loader, Users, LogOut, Wifi, WifiOff, Smartphone } from 'lucide-react'
+import { RefreshCw, QrCode, Loader, Users, LogOut, Wifi, WifiOff, Smartphone, Plus, Trash2, Send, MessageSquare } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import {
   connectWhatsApp,
@@ -8,6 +8,13 @@ import {
   getGroups,
   type WhatsAppGroup,
 } from '../services/whatsappService'
+import {
+  getDiscordChannels,
+  saveDiscordChannel,
+  deleteDiscordChannel,
+  sendDiscordMessage,
+  type DiscordChannel,
+} from '../services/discordService'
 
 export default function Groups() {
   const { userProfile, refreshProfile } = useApp()
@@ -20,6 +27,44 @@ export default function Groups() {
   const [loadingGroups, setLoadingGroups] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Discord State
+  const [discordChannels, setDiscordChannels] = useState<DiscordChannel[]>(() => getDiscordChannels())
+  const [showAddDiscord, setShowAddDiscord] = useState(false)
+  const [newDiscordName, setNewDiscordName] = useState('')
+  const [newDiscordWebhook, setNewDiscordWebhook] = useState('')
+  const [testingDiscordId, setTestingDiscordId] = useState<string | null>(null)
+  const [discordStatusMsg, setDiscordStatusMsg] = useState<{ id?: string; text: string; success: boolean } | null>(null)
+
+  const handleAddDiscord = () => {
+    if (!newDiscordName.trim() || !newDiscordWebhook.trim()) return
+    const updated = saveDiscordChannel({ name: newDiscordName, webhookUrl: newDiscordWebhook, isActive: true })
+    setDiscordChannels(updated)
+    setNewDiscordName('')
+    setNewDiscordWebhook('')
+    setShowAddDiscord(false)
+  }
+
+  const handleDeleteDiscord = (id: string) => {
+    const updated = deleteDiscordChannel(id)
+    setDiscordChannels(updated)
+  }
+
+  const handleTestDiscord = async (channel: DiscordChannel) => {
+    setTestingDiscordId(channel.id)
+    setDiscordStatusMsg(null)
+    const result = await sendDiscordMessage(channel.webhookUrl, {
+      title: '🎮 Teste de Integração AfiliaX',
+      priceFrom: 299.90,
+      priceTo: 199.90,
+      discountPct: 33,
+      coupon: 'AFILIAX10',
+      affiliateLink: 'https://afiliax.app',
+      copyText: '🔥 **Teste do Webhook do Discord realizado com sucesso!**\nSua oferta foi formatada e enviada via Rich Embed.',
+    })
+    setTestingDiscordId(null)
+    setDiscordStatusMsg({ id: channel.id, text: result.message, success: result.success })
+  }
 
   const loadGroups = useCallback(async () => {
     setLoadingGroups(true)
@@ -256,6 +301,170 @@ export default function Groups() {
           )}
         </div>
       )}
+
+      {/* Seção Canais do Discord */}
+      <div className="card animate-fade-in" style={{ marginTop: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <MessageSquare size={18} color="#5865F2" />
+            <div>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                Canais do Discord Webhook ({discordChannels.length})
+              </h3>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                Dispare promoções com Rich Embeds visuais diretamente em servidores do Discord
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowAddDiscord(!showAddDiscord)}
+            style={{
+              background: 'rgba(88,101,242,0.15)',
+              border: '1px solid rgba(88,101,242,0.3)',
+              color: '#5865F2',
+              borderRadius: 8,
+              padding: '6px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={14} /> Adicionar Canal
+          </button>
+        </div>
+
+        {/* Formulário para adicionar Webhook */}
+        {showAddDiscord && (
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+            <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>
+              Novo Canal do Discord
+            </h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nome do Canal</label>
+                <input
+                  type="text"
+                  placeholder="Ex: #promo-hardware ou #ofertas-da-semana"
+                  value={newDiscordName}
+                  onChange={(e) => setNewDiscordName(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)',
+                    fontSize: 13,
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>URL do Webhook do Discord</label>
+                <input
+                  type="text"
+                  placeholder="https://discord.com/api/webhooks/123456789/abc..."
+                  value={newDiscordWebhook}
+                  onChange={(e) => setNewDiscordWebhook(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)',
+                    fontSize: 13,
+                  }}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+                <button className="btn-ghost" onClick={() => setShowAddDiscord(false)} style={{ fontSize: 12 }}>
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleAddDiscord}
+                  disabled={!newDiscordName.trim() || !newDiscordWebhook.trim()}
+                  style={{
+                    background: '#5865F2',
+                    border: 'none',
+                    borderRadius: 8,
+                    color: '#fff',
+                    padding: '6px 14px',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: !newDiscordName.trim() || !newDiscordWebhook.trim() ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Salvar Webhook
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Lista de Canais do Discord */}
+        {discordChannels.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)', fontSize: 12, textAlign: 'center', padding: 24 }}>
+            Nenhum webhook do Discord cadastrado ainda. Clique em "Adicionar Canal" para integrar seu primeiro servidor.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {discordChannels.map((ch) => (
+              <div
+                key={ch.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '12px 14px',
+                  borderRadius: 10,
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                }}
+              >
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(88,101,242,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <MessageSquare size={16} color="#5865F2" />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>
+                    {ch.name}
+                  </p>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {ch.webhookUrl}
+                  </p>
+                  {discordStatusMsg?.id === ch.id && (
+                    <p style={{ fontSize: 11, marginTop: 4, color: discordStatusMsg.success ? '#22c55e' : '#ef4444' }}>
+                      {discordStatusMsg.text}
+                    </p>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    onClick={() => handleTestDiscord(ch)}
+                    disabled={testingDiscordId === ch.id}
+                    className="btn-ghost"
+                    style={{ fontSize: 11, padding: '4px 10px', gap: 4 }}
+                  >
+                    {testingDiscordId === ch.id ? <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={12} />}
+                    Testar
+                  </button>
+                  <button
+                    onClick={() => handleDeleteDiscord(ch.id)}
+                    className="btn-ghost"
+                    style={{ color: '#ef4444', padding: '4px 8px' }}
+                    title="Excluir Webhook"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   )

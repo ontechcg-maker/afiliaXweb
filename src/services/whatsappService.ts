@@ -86,3 +86,15 @@ export async function sendMediaMessage(
     body: JSON.stringify({ groupId, mediaUrl, caption, mediaType }),
   })
 }
+
+/** Calcula um tempo de espera randômico em milissegundos para a proteção Anti-Ban */
+export function getRandomAntiBanDelay(minSeconds: number = 15, maxSeconds: number = 45): number {
+  const min = Math.max(1, minSeconds)
+  const max = Math.max(min, maxSeconds)
+  return Math.floor(Math.random() * (max - min + 1) + min) * 1000
+}
+
+/** Aguarda N milissegundos (promessa async) */
+export function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}

@@ -14,7 +14,7 @@ export interface ScheduledPost {
 }
 
 export interface ScheduleChannel {
-  type: 'whatsapp' | 'telegram'
+  type: 'whatsapp' | 'telegram' | 'discord'
   targetId: string
   targetName: string
 }

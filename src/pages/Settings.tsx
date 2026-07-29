@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Save, Eye, EyeOff, Loader, CheckCircle, XCircle, Bot, MessageSquare, Send, Copy, Check, Code, User, Sun, Moon, Palette } from 'lucide-react'
+import { Save, Eye, EyeOff, Loader, CheckCircle, XCircle, Bot, MessageSquare, Send, Copy, Check, Code, User, Sun, Moon, Palette, ShieldCheck, Sparkles, Plus, Trash2 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { INITIAL_SQL_SCHEMA } from '../services/supabaseClient'
 import { getTelegramBotInfo } from '../services/telegramService'
@@ -43,6 +43,31 @@ export default function Settings() {
   const [tgBotName, setTgBotName] = useState('')
   const [showSql, setShowSql] = useState(false)
   const [copiedSql, setCopiedSql] = useState(false)
+
+  // Prompt Studio State & Handlers
+  const [showAddTemplate, setShowAddTemplate] = useState(false)
+  const [newTemplateName, setNewTemplateName] = useState('')
+  const [newTemplateText, setNewTemplateText] = useState('')
+
+  const handleAddTemplate = () => {
+    if (!newTemplateName.trim() || !newTemplateText.trim()) return
+    const newT = {
+      id: `template_${Date.now()}`,
+      name: newTemplateName.trim(),
+      template: newTemplateText.trim(),
+    }
+    updateSettings({
+      customTemplates: [...(settings.customTemplates || []), newT],
+    })
+    setNewTemplateName('')
+    setNewTemplateText('')
+    setShowAddTemplate(false)
+  }
+
+  const handleDeleteTemplate = (id: string) => {
+    const filtered = (settings.customTemplates || []).filter((t) => t.id !== id)
+    updateSettings({ customTemplates: filtered })
+  }
 
   const handleTestTelegram = async () => {
     setTestingTg(true)
@@ -174,6 +199,178 @@ export default function Settings() {
             {tgStatus === 'error' && <span style={{ color: '#ef4444', fontSize: 13 }}><XCircle size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Token inválido</span>}
           </div>
           <p style={{ fontSize: 11, color: '#525252' }}>💡 Crie seu bot com o <strong style={{ color: '#2aabee' }}>@BotFather</strong> no Telegram.</p>
+        </div>
+      </Section>
+
+      {/* Anti-Ban Guard */}
+      <Section icon={ShieldCheck} title="Anti-Ban Guard (Proteção WhatsApp)">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                Randomização de Delay entre Grupos
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '2px 0 0' }}>
+                Aplica intervalos aleatórios de tempo a cada envio para simular comportamento humano e evitar bloqueios pela Meta.
+              </p>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={settings.antiBan?.enabled ?? true}
+                onChange={(e) =>
+                  updateSettings({
+                    antiBan: {
+                      ...(settings.antiBan || { minDelaySeconds: 15, maxDelaySeconds: 45 }),
+                      enabled: e.target.checked,
+                    },
+                  })
+                }
+                style={{ width: 18, height: 18, cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: 12, fontWeight: 600, color: settings.antiBan?.enabled ? '#22c55e' : 'var(--text-muted)' }}>
+                {settings.antiBan?.enabled ? 'Ativado' : 'Desativado'}
+              </span>
+            </label>
+          </div>
+
+          {settings.antiBan?.enabled && (
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', paddingTop: 6 }}>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Delay Mínimo (segundos)</p>
+                <input
+                  className="input-glass"
+                  type="number"
+                  min={5}
+                  max={120}
+                  value={settings.antiBan?.minDelaySeconds ?? 15}
+                  onChange={(e) =>
+                    updateSettings({
+                      antiBan: {
+                        ...(settings.antiBan || { enabled: true, maxDelaySeconds: 45 }),
+                        minDelaySeconds: Number(e.target.value),
+                      },
+                    })
+                  }
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Delay Máximo (segundos)</p>
+                <input
+                  className="input-glass"
+                  type="number"
+                  min={10}
+                  max={300}
+                  value={settings.antiBan?.maxDelaySeconds ?? 45}
+                  onChange={(e) =>
+                    updateSettings({
+                      antiBan: {
+                        ...(settings.antiBan || { enabled: true, minDelaySeconds: 15 }),
+                        maxDelaySeconds: Number(e.target.value),
+                      },
+                    })
+                  }
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </Section>
+
+      {/* Prompt Studio */}
+      <Section icon={Sparkles} title="Prompt Studio (Templates de Copy)">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
+              Crie e gerencie seus próprios modelos de copy com variáveis dinâmicas: <code style={{ color: '#22d3ee' }}>{'{PRODUTO}'}</code>, <code style={{ color: '#22d3ee' }}>{'{PRECO_DE}'}</code>, <code style={{ color: '#22d3ee' }}>{'{PRECO_POR}'}</code>, <code style={{ color: '#22d3ee' }}>{'{DESCONTO}'}</code>, <code style={{ color: '#22d3ee' }}>{'{CUPOM}'}</code>, <code style={{ color: '#22d3ee' }}>{'{LINK}'}</code>.
+            </p>
+            <button
+              onClick={() => setShowAddTemplate(!showAddTemplate)}
+              className="btn-ghost"
+              style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Plus size={14} /> Novo Template
+            </button>
+          </div>
+
+          {showAddTemplate && (
+            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: 16 }}>
+              <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>Criar Novo Template</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nome do Template</label>
+                  <input
+                    className="input-glass"
+                    placeholder="Ex: Oferta Relâmpago ou Review Estruturado"
+                    value={newTemplateName}
+                    onChange={(e) => setNewTemplateName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Texto do Modelo (com variáveis)</label>
+                  <textarea
+                    className="input-glass"
+                    rows={4}
+                    placeholder="🔥 O produto {PRODUTO} caiu de ~{PRECO_DE}~ por apenas *{PRECO_POR}*!\n\n👉 Garanta o seu aqui: {LINK}"
+                    value={newTemplateText}
+                    onChange={(e) => setNewTemplateText(e.target.value)}
+                    style={{ fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button className="btn-ghost" onClick={() => setShowAddTemplate(false)} style={{ fontSize: 12 }}>Cancelar</button>
+                  <button
+                    onClick={handleAddTemplate}
+                    disabled={!newTemplateName.trim() || !newTemplateText.trim()}
+                    style={{
+                      background: 'var(--accent-color, #6366f1)',
+                      border: 'none',
+                      borderRadius: 8,
+                      color: '#fff',
+                      padding: '6px 14px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: !newTemplateName.trim() || !newTemplateText.trim() ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Salvar Template
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {(settings.customTemplates || []).map((t) => (
+              <div
+                key={t.id}
+                style={{
+                  padding: 14,
+                  borderRadius: 10,
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{t.name}</span>
+                  <button
+                    onClick={() => handleDeleteTemplate(t.id)}
+                    className="btn-ghost"
+                    style={{ color: '#ef4444', padding: '2px 6px' }}
+                    title="Excluir Template"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+                <pre style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace', background: 'rgba(0,0,0,0.2)', padding: 10, borderRadius: 6 }}>
+                  {t.template}
+                </pre>
+              </div>
+            ))}
+          </div>
         </div>
       </Section>
 

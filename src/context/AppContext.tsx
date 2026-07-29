@@ -16,12 +16,26 @@ import { getApiUrl } from '../services/apiUrl'
 
 export type ThemeMode = 'dark' | 'light'
 
+export interface PromptTemplate {
+  id: string
+  name: string
+  template: string
+}
+
+export interface AntiBanConfig {
+  enabled: boolean
+  minDelaySeconds: number
+  maxDelaySeconds: number
+}
+
 // Configurações por usuário (AI, Telegram, Agendamento)
-interface AppSettings {
+export interface AppSettings {
   ai: AIConfig
   telegram: TelegramConfig
   maxGroupMembers: number
   sendIntervalMinutes: number
+  customTemplates: PromptTemplate[]
+  antiBan: AntiBanConfig
 }
 
 interface AppContextType {
@@ -47,6 +61,18 @@ const defaultSettings: AppSettings = {
   telegram: { botToken: '' },
   maxGroupMembers: 1000,
   sendIntervalMinutes: 20,
+  customTemplates: [
+    {
+      id: 'template_padrao_1',
+      name: 'Oportunidade Imperdível',
+      template: '🔥 ATENÇÃO! O produto {PRODUTO} baixou de preço!\n\nDe ~{PRECO_DE}~ por apenas *{PRECO_POR}* ({DESCONTO} OFF)!\n{CUPOM}\n👉 Garanta antes que termine: {LINK}',
+    },
+  ],
+  antiBan: {
+    enabled: true,
+    minDelaySeconds: 15,
+    maxDelaySeconds: 45,
+  },
 }
 
 const AppContext = createContext<AppContextType>({
@@ -113,6 +139,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           telegram: parsed.telegram || defaultSettings.telegram,
           maxGroupMembers: parsed.maxGroupMembers || 1000,
           sendIntervalMinutes: parsed.sendIntervalMinutes || 20,
+          customTemplates: parsed.customTemplates || defaultSettings.customTemplates,
+          antiBan: parsed.antiBan || defaultSettings.antiBan,
         }
       }
     } catch {}
