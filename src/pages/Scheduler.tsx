@@ -20,14 +20,27 @@ export default function Scheduler() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
-  // Atualização em tempo real da fila
+  // Trigger de verificação no servidor ao carregar a página e a cada 20s
   useEffect(() => {
+    const triggerBackendScheduler = async () => {
+      try {
+        const token = localStorage.getItem('afiliax_auth_token')
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (token) headers['Authorization'] = `Bearer ${token}`
+        await fetch('/api/schedules/trigger-due', { method: 'POST', headers })
+      } catch {}
+    }
+
+    triggerBackendScheduler()
+    const interval = setInterval(triggerBackendScheduler, 20_000)
+
     const handleUpdate = () => {
       setQueue(loadQueue())
     }
     window.addEventListener('afiliax_queue_updated', handleUpdate)
     window.addEventListener('storage', handleUpdate)
     return () => {
+      clearInterval(interval)
       window.removeEventListener('afiliax_queue_updated', handleUpdate)
       window.removeEventListener('storage', handleUpdate)
     }

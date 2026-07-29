@@ -1044,32 +1044,77 @@ app.use('/api/api', router)
 app.use('/api', router)
 app.use('/', router)
 
+// ─── Rota para Forçar Execução dos Agendamentos Pendentes ───────
+router.post('/schedules/trigger-due', requireAuth, async (_req, res) => {
+  try {
+    const processedCount = await runScheduler()
+    res.json({ success: true, processed: processedCount || 0 })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // ─── Scheduler Multi-Tenant 24/7 ────────────────────────────────
 let schedulerRunning = false
 
 async function runScheduler() {
-  if (!supabaseAdmin || !EVOLUTION_BASE_URL) return
+  if (!supabaseAdmin || !EVOLUTION_BASE_URL) return 0
 
   const now = new Date().toISOString()
 
-  // Busca todos os schedules pendentes com dados da oferta e perfil do usuário
+  // 1. Busca todos os agendamentos pendentes com suas respectivas ofertas (sem join problemático no PostgREST)
   const { data: duePosts, error } = await supabaseAdmin
     .from('schedules')
-    .select('*, offers(*), profiles!inner(instance_name, instance_status)')
+    .select('*, offers(*)')
     .eq('status', 'pending')
     .lte('scheduled_at', now)
 
-  if (error || !duePosts || duePosts.length === 0) return
+  if (error) {
+    console.error('[Scheduler] Erro ao buscar agendamentos:', error.message)
+    return 0
+  }
 
-  console.log(`[Scheduler] Processando ${duePosts.length} post(s)...`)
+  if (!duePosts || duePosts.length === 0) return 0
+
+  console.log(`[Scheduler] Processando ${duePosts.length} post(s) agendado(s)...`)
+  let totalProcessed = 0
 
   for (const schedule of duePosts) {
     const offer = schedule.offers
-    const instanceName = schedule.profiles?.instance_name
-    if (!offer || !instanceName) continue
+    if (!offer) continue
 
-    if (schedule.profiles?.instance_status !== 'connected') {
-      // Instância desconectada — pula mas não falha
+    // 2. Busca o perfil do usuário proprietário do agendamento
+    let instanceName = null
+    let instanceStatus = 'disconnected'
+
+    if (schedule.user_id) {
+      const { data: userProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('instance_name, instance_status')
+        .eq('id', schedule.user_id)
+        .maybeSingle()
+
+      instanceName = userProfile?.instance_name
+      instanceStatus = userProfile?.instance_status || 'disconnected'
+    }
+
+    // Fallback: se não tiver user_id no agendamento, tenta usar a primeira instância conectada
+    if (!instanceName || instanceStatus !== 'connected') {
+      const { data: fallbackProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('instance_name, instance_status')
+        .eq('instance_status', 'connected')
+        .limit(1)
+        .maybeSingle()
+
+      if (fallbackProfile) {
+        instanceName = fallbackProfile.instance_name
+        instanceStatus = fallbackProfile.instance_status
+      }
+    }
+
+    if (!instanceName || instanceStatus !== 'connected') {
+      console.warn(`[Scheduler] Agendamento ${schedule.id} ignorado: Nenhuma instância do WhatsApp conectada.`)
       continue
     }
 
@@ -1080,7 +1125,7 @@ async function runScheduler() {
       if (channel.type !== 'whatsapp') continue
 
       let targetIds = []
-      if (channel.targetId === 'all') {
+      if (channel.targetId === 'all' || !channel.targetId) {
         const groupData = await evolutionFetch(
           `/group/fetchAllGroups/${instanceName}?getParticipants=false`
         ).catch(() => null)
@@ -1095,17 +1140,21 @@ async function runScheduler() {
         if (!rawTarget || rawTarget.startsWith('cms')) continue
         const target = rawTarget.includes('@') ? rawTarget : `${rawTarget}@g.us`
         try {
-          if (offer.image_url) {
+          if (offer.image_url && offer.image_url.trim().length > 0) {
             const isDataUri = offer.image_url.startsWith('data:')
             const isHttp = offer.image_url.startsWith('http')
+            const lower = offer.image_url.toLowerCase()
+            const isVideo = lower.startsWith('data:video/') || lower.endsWith('.mp4') || lower.endsWith('.webm')
+
             await evolutionFetch(`/message/sendMedia/${instanceName}`, 'POST', {
               number: target,
-              mediatype: 'image',
+              mediaType: isVideo ? 'video' : 'image',
+              mediatype: isVideo ? 'video' : 'image',
               mediaUrl: isHttp ? offer.image_url : undefined,
-              media: isDataUri ? offer.image_url.split(',')[1] : undefined,
+              media: isHttp ? offer.image_url : (isDataUri ? offer.image_url.split(',')[1] : offer.image_url),
               caption: offer.copy_text || '',
-              fileName: 'imagem.jpg',
-              mimetype: 'image/jpeg',
+              fileName: isVideo ? 'video.mp4' : 'imagem.jpg',
+              mimetype: isVideo ? 'video/mp4' : 'image/jpeg',
             })
           } else {
             await evolutionFetch(`/message/sendText/${instanceName}`, 'POST', {
@@ -1116,7 +1165,7 @@ async function runScheduler() {
           }
           success = true
         } catch (e) {
-          console.error(`[Scheduler] Erro envio para ${target}:`, e.message)
+          console.error(`[Scheduler] Erro no envio para ${target}:`, e.message)
         }
       }
     }
@@ -1126,8 +1175,11 @@ async function runScheduler() {
       .update({ status: success ? 'sent' : 'failed', sent_at: new Date().toISOString() })
       .eq('id', schedule.id)
 
+    totalProcessed++
     console.log(`[Scheduler] Post ${schedule.id} → ${success ? '✅ sent' : '❌ failed'}`)
   }
+
+  return totalProcessed
 }
 
 // ─── Keep-Alive do Supabase (Impede que o projeto entre em Pause) ───
