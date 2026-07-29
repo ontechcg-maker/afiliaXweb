@@ -323,13 +323,19 @@ router.post('/admin/config', requireAuth, requireAdmin, async (req, res) => {
 /** GET /admin/stats — Métricas globais do SaaS */
 router.get('/admin/stats', requireAuth, requireAdmin, async (_req, res) => {
   try {
+    let authUsersCount = 0
+    if (supabaseAdmin) {
+      const { data: authData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 }).catch(() => ({ data: { users: [] } }))
+      authUsersCount = authData?.users?.length || 0
+    }
+
     const [usersRes, offersRes, schedulesRes] = await Promise.all([
-      supabaseAdmin.from('profiles').select('id, instance_status', { count: 'exact' }),
-      supabaseAdmin.from('offers').select('id', { count: 'exact', head: true }),
-      supabaseAdmin.from('schedules').select('id', { count: 'exact', head: true }).eq('status', 'sent'),
+      supabaseAdmin ? supabaseAdmin.from('profiles').select('id, instance_status', { count: 'exact' }) : { count: 0, data: [] },
+      supabaseAdmin ? supabaseAdmin.from('offers').select('id', { count: 'exact', head: true }) : { count: 0 },
+      supabaseAdmin ? supabaseAdmin.from('schedules').select('id', { count: 'exact', head: true }).eq('status', 'sent') : { count: 0 },
     ])
 
-    const totalUsers = usersRes.count || 0
+    const totalUsers = Math.max(authUsersCount, usersRes.count || 0)
     const activeUsers = (usersRes.data || []).filter((u) => u.instance_status === 'connected').length
     const totalOffers = offersRes.count || 0
     const totalDispatches = schedulesRes.count || 0
@@ -340,16 +346,78 @@ router.get('/admin/stats', requireAuth, requireAdmin, async (_req, res) => {
   }
 })
 
-/** GET /admin/users — Lista todos os clientes */
+/** GET /admin/users — Lista todos os clientes cadastrados no Supabase Auth + Profiles */
 router.get('/admin/users', requireAuth, requireAdmin, async (_req, res) => {
   try {
-    const { data: users, error } = await supabaseAdmin
+    if (!supabaseAdmin) return res.json([])
+
+    // 1. Busca todos os usuários cadastrados na Autenticação (auth.users)
+    const { data: authData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 }).catch(() => ({ data: { users: [] } }))
+    const authUsers = authData?.users || []
+
+    // 2. Busca todos os perfis na tabela public.profiles
+    const { data: profiles } = await supabaseAdmin
       .from('profiles')
       .select('id, email, instance_name, instance_status, whatsapp_number, role, plan_tier, daily_posts_limit, is_blocked, created_at')
-      .order('created_at', { ascending: false })
 
-    if (error) throw error
-    res.json(users || [])
+    const profilesMap = new Map((profiles || []).map((p) => [p.id, p]))
+    const combinedUsers = []
+
+    // 3. Mescla os usuários de auth.users com seus perfis (criando perfis automaticamente se faltarem)
+    for (const authUser of authUsers) {
+      let profile = profilesMap.get(authUser.id)
+
+      if (!profile) {
+        const instanceName = `usr_${authUser.id.replace(/-/g, '')}`
+        const profilePayload = {
+          id: authUser.id,
+          email: authUser.email || '',
+          instance_name: instanceName,
+          instance_status: 'disconnected',
+          role: authUser.email === 'hevertonsalvador.cg@gmail.com' ? 'admin' : 'user',
+          plan_tier: 'free',
+          daily_posts_limit: 5,
+          is_blocked: false,
+        }
+
+        try {
+          const { data: created } = await supabaseAdmin
+            .from('profiles')
+            .upsert(profilePayload, { onConflict: 'id' })
+            .select('*')
+            .maybeSingle()
+
+          profile = created || profilePayload
+        } catch {
+          profile = profilePayload
+        }
+      }
+
+      combinedUsers.push({
+        id: authUser.id,
+        email: authUser.email || profile?.email || 'Sem e-mail',
+        instance_name: profile?.instance_name || `usr_${authUser.id.replace(/-/g, '')}`,
+        instance_status: profile?.instance_status || 'disconnected',
+        whatsapp_number: profile?.whatsapp_number || '',
+        role: profile?.role || (authUser.email === 'hevertonsalvador.cg@gmail.com' ? 'admin' : 'user'),
+        plan_tier: profile?.plan_tier || 'free',
+        daily_posts_limit: profile?.daily_posts_limit || 5,
+        is_blocked: profile?.is_blocked || false,
+        created_at: authUser.created_at || profile?.created_at || new Date().toISOString(),
+      })
+    }
+
+    // Inclui também qualquer usuário em public.profiles que possa ter sido criado separadamente
+    for (const p of (profiles || [])) {
+      if (!combinedUsers.some((u) => u.id === p.id)) {
+        combinedUsers.push(p)
+      }
+    }
+
+    // Ordena por data de cadastro (mais recentes no topo)
+    combinedUsers.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+    res.json(combinedUsers)
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
