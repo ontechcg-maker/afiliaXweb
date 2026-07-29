@@ -39,6 +39,16 @@ export async function resetPassword(
   return { success: true }
 }
 
+/** Atualiza a senha do usuário com a nova senha digitada */
+export async function updatePassword(
+  newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) return { success: false, error: 'Supabase não configurado.' }
+  const { error } = await supabase.auth.updateUser({ password: newPassword })
+  if (error) return { success: false, error: error.message }
+  return { success: true }
+}
+
 /** Cadastro de novo usuário via Supabase Auth */
 export async function register(
   email: string,

@@ -1,6 +1,7 @@
-import { useState } from 'react'
-import { Zap, Mail, Lock, Eye, EyeOff, Loader, ArrowLeft, CheckCircle2 } from 'lucide-react'
-import { login, resetPassword } from '../services/authService'
+import { useState, useEffect } from 'react'
+import { Zap, Mail, Lock, Eye, EyeOff, Loader, ArrowLeft, CheckCircle2, KeyRound } from 'lucide-react'
+import { login, resetPassword, updatePassword } from '../services/authService'
+import { supabase } from '../services/supabaseClient'
 
 interface LoginProps {
   onSuccess: () => void
@@ -10,19 +11,49 @@ interface LoginProps {
 export default function Login({ onSuccess, onGoToRegister }: LoginProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [forgotMode, setForgotMode] = useState(false)
   const [resetSuccess, setResetSuccess] = useState(false)
+  const [isResetFlow, setIsResetFlow] = useState(false)
+  const [updateSuccess, setUpdateSuccess] = useState(false)
+
+  useEffect(() => {
+    // Verifica se veio da URL de redefinição de senha ou evento do Supabase
+    if (window.location.hash.includes('type=recovery') || window.location.href.includes('type=recovery')) {
+      setIsResetFlow(true)
+    }
+
+    if (supabase) {
+      const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          setIsResetFlow(true)
+        }
+      })
+      return () => {
+        authListener.subscription.unsubscribe()
+      }
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!email.trim()) return
     setLoading(true)
     setError('')
 
-    if (forgotMode) {
+    if (isResetFlow) {
+      if (!newPassword.trim()) return
+      const result = await updatePassword(newPassword.trim())
+      setLoading(false)
+      if (result.success) {
+        setUpdateSuccess(true)
+      } else {
+        setError(result.error || 'Erro ao redefinir a senha.')
+      }
+    } else if (forgotMode) {
+      if (!email.trim()) return
       const result = await resetPassword(email.trim())
       setLoading(false)
       if (result.success) {
@@ -31,7 +62,7 @@ export default function Login({ onSuccess, onGoToRegister }: LoginProps) {
         setError(result.error || 'Erro ao enviar e-mail de recuperação.')
       }
     } else {
-      if (!password.trim()) return
+      if (!email.trim() || !password.trim()) return
       const result = await login(email.trim(), password)
       setLoading(false)
       if (result.success) {
@@ -57,11 +88,33 @@ export default function Login({ onSuccess, onGoToRegister }: LoginProps) {
           <div style={logoBox}><Zap size={28} color="#22d3ee" /></div>
           <h1 style={titleStyle}>AfiliaX</h1>
           <p style={{ color: '#525252', fontSize: 13 }}>
-            {forgotMode ? 'Recuperação de Senha' : 'Divulgador Automático de Afiliados'}
+            {isResetFlow
+              ? 'Definir Nova Senha'
+              : forgotMode
+              ? 'Recuperação de Senha'
+              : 'Divulgador Automático de Afiliados'}
           </p>
         </div>
 
-        {resetSuccess ? (
+        {updateSuccess ? (
+          <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center' }}>
+            <CheckCircle2 size={40} color="#22c55e" />
+            <p style={{ color: '#e5e5e5', fontSize: 14, margin: 0 }}>
+              Sua senha foi redefinida com sucesso!
+            </p>
+            <button
+              onClick={() => {
+                setIsResetFlow(false)
+                setUpdateSuccess(false)
+                setForgotMode(false)
+                window.location.hash = ''
+              }}
+              style={{ ...backBtnStyle, marginTop: 10, background: 'linear-gradient(135deg, #22d3ee, #818cf8)', color: '#000', fontWeight: 700 }}
+            >
+              Fazer Login com a Nova Senha
+            </button>
+          </div>
+        ) : resetSuccess ? (
           <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center' }}>
             <CheckCircle2 size={40} color="#22c55e" />
             <p style={{ color: '#e5e5e5', fontSize: 14, margin: 0 }}>
@@ -79,31 +132,14 @@ export default function Login({ onSuccess, onGoToRegister }: LoginProps) {
           </div>
         ) : (
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <label style={labelStyle}><Mail size={12} /> E-mail</label>
-              <input
-                type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu@email.com" autoFocus required style={inputStyle}
-              />
-            </div>
-
-            {!forgotMode && (
+            {isResetFlow ? (
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <label style={{ ...labelStyle, marginBottom: 0 }}><Lock size={12} /> Senha</label>
-                  <button
-                    type="button"
-                    onClick={() => { setForgotMode(true); setError(''); }}
-                    style={{ background: 'none', border: 'none', color: '#22d3ee', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, padding: 0 }}
-                  >
-                    Esqueceu a senha?
-                  </button>
-                </div>
+                <label style={labelStyle}><KeyRound size={12} /> Nova Senha</label>
                 <div style={{ position: 'relative' }}>
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    value={password} onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Sua senha" required={!forgotMode}
+                    value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Digite sua nova senha" required minLength={6} autoFocus
                     style={{ ...inputStyle, paddingRight: 40 }}
                   />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} style={eyeBtn}>
@@ -111,25 +147,63 @@ export default function Login({ onSuccess, onGoToRegister }: LoginProps) {
                   </button>
                 </div>
               </div>
+            ) : (
+              <>
+                <div>
+                  <label style={labelStyle}><Mail size={12} /> E-mail</label>
+                  <input
+                    type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                    placeholder="seu@email.com" autoFocus required style={inputStyle}
+                  />
+                </div>
+
+                {!forgotMode && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <label style={{ ...labelStyle, marginBottom: 0 }}><Lock size={12} /> Senha</label>
+                      <button
+                        type="button"
+                        onClick={() => { setForgotMode(true); setError(''); }}
+                        style={{ background: 'none', border: 'none', color: '#22d3ee', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, padding: 0 }}
+                      >
+                        Esqueceu a senha?
+                      </button>
+                    </div>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={password} onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Sua senha" required={!forgotMode}
+                        style={{ ...inputStyle, paddingRight: 40 }}
+                      />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} style={eyeBtn}>
+                        {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
             {error && <p style={{ color: '#ef4444', fontSize: 12, margin: 0 }}>⚠️ {error}</p>}
 
             <button
-              type="submit" disabled={loading || !email || (!forgotMode && !password)}
+              type="submit" disabled={loading || (isResetFlow ? !newPassword : !email || (!forgotMode && !password))}
               style={{
-                background: loading || !email || (!forgotMode && !password) ? 'rgba(34,211,238,0.3)' : 'linear-gradient(135deg, #22d3ee, #818cf8)',
+                background: loading || (isResetFlow ? !newPassword : !email || (!forgotMode && !password)) ? 'rgba(34,211,238,0.3)' : 'linear-gradient(135deg, #22d3ee, #818cf8)',
                 border: 'none', borderRadius: 10,
-                color: loading || !email || (!forgotMode && !password) ? 'rgba(255,255,255,0.4)' : '#000',
+                color: loading || (isResetFlow ? !newPassword : !email || (!forgotMode && !password)) ? 'rgba(255,255,255,0.4)' : '#000',
                 padding: '13px 24px', fontSize: 14, fontWeight: 700,
                 fontFamily: 'Inter, sans-serif',
-                cursor: loading || !email || (!forgotMode && !password) ? 'not-allowed' : 'pointer',
+                cursor: loading || (isResetFlow ? !newPassword : !email || (!forgotMode && !password)) ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 transition: 'all 0.2s',
               }}
             >
               {loading ? (
                 <><Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> Processando...</>
+              ) : isResetFlow ? (
+                '🔑 Salvar Nova Senha'
               ) : forgotMode ? (
                 '📩 Enviar Link de Recuperação'
               ) : (
@@ -137,7 +211,7 @@ export default function Login({ onSuccess, onGoToRegister }: LoginProps) {
               )}
             </button>
 
-            {forgotMode && (
+            {forgotMode && !isResetFlow && (
               <button
                 type="button"
                 onClick={() => { setForgotMode(false); setError(''); }}
