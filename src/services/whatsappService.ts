@@ -23,26 +23,19 @@ const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 async function apiCall(path: string, options: RequestInit = {}): Promise<any> {
   const headers = await authHeader()
   const url = `${API_BASE_URL}/api${path}`
-  try {
-    const res = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
-        ...(options.headers as Record<string, string> || {}),
-      },
-    })
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      throw new Error(data?.error || `Erro HTTP ${res.status}: Servidor indisponível ou rota não encontrada.`)
-    }
-    return res.json()
-  } catch (e: any) {
-    if (e.message?.includes('HTTP 405') || e.message?.includes('HTTP 404')) {
-      throw new Error('Servidor Backend (/api) não está respondendo nesta porta ou a Evolution API não está configurada no servidor.')
-    }
-    throw e
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers,
+      ...(options.headers as Record<string, string> || {}),
+    },
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data?.error || `Erro HTTP ${res.status}`)
   }
+  return data
 }
 
 /** Inicia conexão WhatsApp — retorna QR Code (base64) */
