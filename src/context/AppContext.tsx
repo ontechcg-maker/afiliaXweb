@@ -12,6 +12,7 @@ import {
   type UserProfile,
 } from '../services/authService'
 import { getConnectionStatus } from '../services/whatsappService'
+import { getApiUrl } from '../services/apiUrl'
 
 export type ThemeMode = 'dark' | 'light'
 
@@ -123,8 +124,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const fetchSaaSInfo = async () => {
     try {
       const headers = await authHeader()
-      const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-      const res = await fetch(`${API_BASE_URL}/api/ai-info`, { headers })
+      const res = await fetch(getApiUrl('/ai-info'), { headers })
       const data = await res.json()
       if (res.ok && data.provider) {
         setSaasAiInfo({ provider: data.provider, model: data.model })

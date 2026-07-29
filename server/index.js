@@ -705,6 +705,7 @@ router.post('/whatsapp/send-media', requireAuth, async (req, res) => {
 
 // ─── Registrar todas as rotas no Express com prefixo /api ────────
 // (compatível com o Traefik stripprefix=/api E com chamadas diretas /api/...)
+app.use('/api/api', router)
 app.use('/api', router)
 app.use('/', router)
 

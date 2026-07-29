@@ -139,8 +139,7 @@ export function cleanCopyOutput(rawText: string): string {
 }
 
 import { authHeader } from './authService'
-
-const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+import { getApiUrl } from './apiUrl'
 
 export async function generateCopy(
   product: ProductData,
@@ -177,7 +176,7 @@ export async function generateCopy(
   if (!rawCopy) {
     try {
       const headers = await authHeader()
-      const res = await fetch(`${API_BASE_URL}/api/generate-copy`, {
+      const res = await fetch(getApiUrl('/generate-copy'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

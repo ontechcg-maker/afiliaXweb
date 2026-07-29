@@ -18,11 +18,11 @@ export interface ConnectionStatus {
   whatsappNumber?: string
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+import { getApiUrl } from './apiUrl'
 
 async function apiCall(path: string, options: RequestInit = {}): Promise<any> {
   const headers = await authHeader()
-  const url = `${API_BASE_URL}/api${path}`
+  const url = getApiUrl(path)
   const res = await fetch(url, {
     ...options,
     headers: {
