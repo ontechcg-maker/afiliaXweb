@@ -1,19 +1,54 @@
-import React, { useState } from 'react'
+import React, { useState, lazy, Suspense } from 'react'
 import { AppProvider, useApp } from './context/AppContext'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
-import Dashboard from './pages/Dashboard'
-import NewPost from './pages/NewPost'
-import Scheduler from './pages/Scheduler'
-import Groups from './pages/Groups'
-import History from './pages/History'
-import Settings from './pages/Settings'
-import Admin from './pages/Admin'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import './index.css'
 
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const NewPost = lazy(() => import('./pages/NewPost'))
+const Scheduler = lazy(() => import('./pages/Scheduler'))
+const Groups = lazy(() => import('./pages/Groups'))
+const History = lazy(() => import('./pages/History'))
+const Settings = lazy(() => import('./pages/Settings'))
+const Admin = lazy(() => import('./pages/Admin'))
+
 type AuthScreen = 'login' | 'register'
+
+function LoadingFallback() {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        width: '100%',
+        color: 'var(--text-muted)',
+        fontSize: 14,
+        gap: 8,
+      }}
+    >
+      <div
+        style={{
+          width: 20,
+          height: 20,
+          border: '2px solid var(--border-color, #333)',
+          borderTopColor: 'var(--accent-color, #6366f1)',
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite',
+        }}
+      />
+      <span>Carregando página...</span>
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  )
+}
 
 function AppContent() {
   const { activeTab, authenticated, setAuthenticated } = useApp()
@@ -61,7 +96,9 @@ function AppContent() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Header />
         <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-          {pages[activeTab] || <Dashboard />}
+          <Suspense fallback={<LoadingFallback />}>
+            {pages[activeTab] || <Dashboard />}
+          </Suspense>
         </main>
       </div>
     </div>

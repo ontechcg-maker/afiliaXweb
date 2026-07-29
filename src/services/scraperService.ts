@@ -249,7 +249,7 @@ export async function scrapeProduct(rawUrl: string): Promise<ScrapedProduct> {
       if (directRes.ok) {
         html = await directRes.text()
       }
-    } catch (e) {}
+    } catch {}
   }
 
   if (!html || html.length < 200) {

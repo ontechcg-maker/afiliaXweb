@@ -101,7 +101,7 @@ export default function NewPost() {
       const data = await scrapeProduct(url.trim())
       setProduct(data)
       if (!customImage) setCustomImage(data.imageUrl)
-    } catch (err: any) {
+    } catch {
       setError('Erro ao extrair dados. Preencha manualmente.')
     } finally {
       setLoading(false)
@@ -318,7 +318,7 @@ export default function NewPost() {
             status: 'pending',
           })
         }
-      } catch (_e) {}
+      } catch {}
     }
 
     setSuccessMsg('🚀 Oferta agendada e adicionada à fila com sucesso!')

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { RefreshCw, QrCode, Loader, Users, LogOut, Wifi, WifiOff, Smartphone } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import {
@@ -21,10 +21,41 @@ export default function Groups() {
   const [error, setError] = useState<string | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  const loadGroups = useCallback(async () => {
+    setLoadingGroups(true)
+    try {
+      const list = await getGroups()
+      setGroups(list)
+    } catch {
+      setGroups([])
+    } finally {
+      setLoadingGroups(false)
+    }
+  }, [])
+
+  const checkStatus = useCallback(async () => {
+    try {
+      const res = await getConnectionStatus()
+      setStatus(res.connected ? 'connected' : 'disconnected')
+      if (res.connected && groups.length === 0) {
+        await loadGroups()
+      }
+    } catch {
+      setStatus('disconnected')
+    }
+  }, [groups.length, loadGroups])
+
+  const clearPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
+  }, [])
+
   // Verifica status inicial
   useEffect(() => {
     checkStatus()
-  }, [])
+  }, [checkStatus])
 
   // Polling quando está conectando (esperando QR Code ser escaneado)
   useEffect(() => {
@@ -43,38 +74,7 @@ export default function Groups() {
       clearPolling()
     }
     return clearPolling
-  }, [status])
-
-  const clearPolling = () => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current)
-      pollingRef.current = null
-    }
-  }
-
-  const checkStatus = async () => {
-    try {
-      const res = await getConnectionStatus()
-      setStatus(res.connected ? 'connected' : 'disconnected')
-      if (res.connected && groups.length === 0) {
-        await loadGroups()
-      }
-    } catch {
-      setStatus('disconnected')
-    }
-  }
-
-  const loadGroups = async () => {
-    setLoadingGroups(true)
-    try {
-      const list = await getGroups()
-      setGroups(list)
-    } catch {
-      setGroups([])
-    } finally {
-      setLoadingGroups(false)
-    }
-  }
+  }, [status, refreshProfile, loadGroups, clearPolling])
 
   const handleConnect = async () => {
     setLoading(true)

@@ -161,7 +161,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (authenticated && user) {
       loadAndApplyProfile()
     }
-  }, [authenticated, user?.id])
+  }, [authenticated, user])
 
   const loadAndApplyProfile = async () => {
     fetchSaaSInfo()
@@ -205,7 +205,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         send_interval_minutes: settings.sendIntervalMinutes,
       }).catch(() => {})
     }
-  }, [settings])
+  }, [settings, authenticated, user])
 
   // ─── Verifica status do WhatsApp periodicamente ──────────────
   useEffect(() => {
@@ -224,7 +224,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     check()
     const interval = setInterval(check, 30000)
     return () => clearInterval(interval)
-  }, [authenticated])
+  }, [authenticated, userProfile?.instance_status])
 
   const updateSettings = (partial: Partial<AppSettings>) => {
     setSettings((prev) => ({ ...prev, ...partial }))

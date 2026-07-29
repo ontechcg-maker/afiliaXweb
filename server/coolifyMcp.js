@@ -20,7 +20,7 @@ app.get('/mcp/coolify/applications', async (req, res) => {
   try {
     const response = await coolifyClient.get('/applications');
     res.json(response.data);
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ error: error.message, details: error.response?.data });
   }
 });
@@ -31,7 +31,7 @@ app.post('/mcp/coolify/deploy', async (req, res) => {
   try {
     const response = await coolifyClient.post(`/deploy?uuid=${uuid}&force=${force || false}`);
     res.json(response.data);
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ error: error.message, details: error.response?.data });
   }
 });
@@ -41,7 +41,7 @@ app.get('/mcp/coolify/applications/:uuid', async (req, res) => {
   try {
     const response = await coolifyClient.get(`/applications/${req.params.uuid}`);
     res.json(response.data);
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ error: error.message, details: error.response?.data });
   }
 });
@@ -51,7 +51,7 @@ app.post('/mcp/coolify/applications/:uuid/restart', async (req, res) => {
   try {
     const response = await coolifyClient.post(`/applications/${req.params.uuid}/restart`);
     res.json(response.data);
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ error: error.message, details: error.response?.data });
   }
 });
