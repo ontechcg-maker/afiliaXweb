@@ -84,6 +84,10 @@ export default function Admin() {
     evolutionApiKey: '',
     openrouterApiKey: '',
     geminiApiKey: '',
+    openaiApiKey: '',
+    aiProvider: 'gemini',
+    aiModel: 'gemini-2.0-flash',
+    customModel: '',
   })
   const [savingConfig, setSavingConfig] = useState(false)
 
@@ -94,7 +98,7 @@ export default function Admin() {
       const [statsData, usersData, configData] = await Promise.all([
         getAdminStats().catch(() => null),
         getAdminUsers().catch(() => []),
-        getAdminSystemConfig().catch(() => ({ evolutionBaseUrl: '', evolutionApiKey: '', openrouterApiKey: '', geminiApiKey: '' })),
+        getAdminSystemConfig().catch(() => ({ evolutionBaseUrl: '', evolutionApiKey: '', openrouterApiKey: '', geminiApiKey: '', openaiApiKey: '', aiProvider: 'gemini', aiModel: 'gemini-2.0-flash', customModel: '' })),
       ])
       setStats(statsData)
       setUsersList(usersData)
@@ -273,107 +277,196 @@ export default function Admin() {
           <Crown size={18} color="#6366f1" />
           Configurações Globais do SaaS (Dono do Sistema)
         </h3>
-        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 20 }}>
-          As chaves preenchidas aqui serão utilizadas por todos os seus clientes para conexão de WhatsApp e geração de ofertas por IA.
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 24 }}>
+          As configurações aqui serão utilizadas por todos os clientes para conexão de WhatsApp e geração de ofertas por IA.
         </p>
 
-        <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+        <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+
+          {/* ─── Seção IA ─────────────────────────────────────────── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+              <span style={{ fontSize: 18 }}>🤖</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Inteligência Artificial</span>
+            </div>
+
+            {/* Provedor */}
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                Provedor de IA
+              </label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {[
+                  { id: 'gemini', label: 'Google Gemini', emoji: '✨' },
+                  { id: 'openai', label: 'OpenAI ChatGPT', emoji: '🤖' },
+                  { id: 'openrouter', label: 'OpenRouter', emoji: '🌐' },
+                  { id: 'ollama', label: 'Ollama Local', emoji: '🦙' },
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSysConfig({ ...sysConfig, aiProvider: p.id, aiModel: '', customModel: '' })}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: 10,
+                      border: `1.5px solid ${sysConfig.aiProvider === p.id ? '#6366f1' : 'rgba(255,255,255,0.1)'}`,
+                      background: sysConfig.aiProvider === p.id ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.04)',
+                      color: sysConfig.aiProvider === p.id ? '#a5b4fc' : 'var(--text-secondary)',
+                      fontSize: 13,
+                      fontWeight: sysConfig.aiProvider === p.id ? 700 : 500,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <span>{p.emoji}</span> {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* API Key dinâmica por provedor */}
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Evolution API — URL Base
+                {sysConfig.aiProvider === 'gemini' && 'Google Gemini — API Key'}
+                {sysConfig.aiProvider === 'openai' && 'OpenAI — API Key'}
+                {sysConfig.aiProvider === 'openrouter' && 'OpenRouter — API Key'}
+                {sysConfig.aiProvider === 'ollama' && 'Ollama — URL Base'}
               </label>
               <input
-                type="text"
+                type={sysConfig.aiProvider === 'ollama' ? 'text' : 'password'}
                 className="input-glass"
-                placeholder="https://api.ontechcg.cloud"
-                value={sysConfig.evolutionBaseUrl}
-                onChange={(e) => setSysConfig({ ...sysConfig, evolutionBaseUrl: e.target.value })}
+                placeholder={
+                  sysConfig.aiProvider === 'gemini' ? 'AIzaSy...' :
+                  sysConfig.aiProvider === 'openai' ? 'sk-...' :
+                  sysConfig.aiProvider === 'openrouter' ? 'sk-or-v1-...' :
+                  'http://localhost:11434'
+                }
+                value={
+                  sysConfig.aiProvider === 'gemini' ? sysConfig.geminiApiKey :
+                  sysConfig.aiProvider === 'openai' ? sysConfig.openaiApiKey :
+                  sysConfig.aiProvider === 'openrouter' ? sysConfig.openrouterApiKey :
+                  sysConfig.evolutionBaseUrl // reutiliza o campo URL para Ollama
+                }
+                onChange={(e) => {
+                  const v = e.target.value
+                  if (sysConfig.aiProvider === 'gemini') setSysConfig({ ...sysConfig, geminiApiKey: v })
+                  else if (sysConfig.aiProvider === 'openai') setSysConfig({ ...sysConfig, openaiApiKey: v })
+                  else if (sysConfig.aiProvider === 'openrouter') setSysConfig({ ...sysConfig, openrouterApiKey: v })
+                }}
               />
             </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Evolution API — API Key Global
-              </label>
-              <input
-                type="password"
-                className="input-glass"
-                placeholder="Cole sua API Key da Evolution"
-                value={sysConfig.evolutionApiKey}
-                onChange={(e) => setSysConfig({ ...sysConfig, evolutionApiKey: e.target.value })}
-              />
-            </div>
+            {/* Modelo */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Modelo de IA
+                </label>
+                <select
+                  className="input-glass"
+                  style={{ background: 'rgba(255,255,255,0.04)', color: '#fff', cursor: 'pointer' }}
+                  value={sysConfig.aiModel || ''}
+                  onChange={(e) => setSysConfig({ ...sysConfig, aiModel: e.target.value, customModel: e.target.value === '__custom__' ? sysConfig.customModel : '' })}
+                >
+                  <option value="" style={{ background: '#111' }}>— Selecione o modelo —</option>
+                  {sysConfig.aiProvider === 'gemini' && (
+                    <>
+                      <option value="gemini-2.0-flash" style={{ background: '#111' }}>✨ Gemini 2.0 Flash</option>
+                      <option value="gemini-2.0-flash-exp" style={{ background: '#111' }}>⚡ Gemini 2.0 Flash Exp (Gratuito)</option>
+                      <option value="gemini-1.5-pro" style={{ background: '#111' }}>💎 Gemini 1.5 Pro</option>
+                      <option value="gemini-1.5-flash" style={{ background: '#111' }}>🚀 Gemini 1.5 Flash</option>
+                      <option value="gemini-exp-1206" style={{ background: '#111' }}>🧪 Gemini Exp 1206</option>
+                    </>
+                  )}
+                  {sysConfig.aiProvider === 'openai' && (
+                    <>
+                      <option value="gpt-4o" style={{ background: '#111' }}>🤖 GPT-4o</option>
+                      <option value="gpt-4o-mini" style={{ background: '#111' }}>⚡ GPT-4o Mini</option>
+                      <option value="gpt-4-turbo" style={{ background: '#111' }}>💡 GPT-4 Turbo</option>
+                      <option value="gpt-3.5-turbo" style={{ background: '#111' }}>🔹 GPT-3.5 Turbo</option>
+                      <option value="o1-mini" style={{ background: '#111' }}>🔵 o1 Mini</option>
+                    </>
+                  )}
+                  {sysConfig.aiProvider === 'openrouter' && (
+                    <>
+                      <option value="google/gemini-2.0-flash-exp:free" style={{ background: '#111' }}>⚡ Gemini 2.0 Flash (Grátis)</option>
+                      <option value="deepseek/deepseek-chat" style={{ background: '#111' }}>🧠 DeepSeek V3</option>
+                      <option value="deepseek/deepseek-r1" style={{ background: '#111' }}>💡 DeepSeek R1</option>
+                      <option value="meta-llama/llama-3.3-70b-instruct" style={{ background: '#111' }}>🦙 Llama 3.3 70B</option>
+                      <option value="anthropic/claude-3.5-sonnet" style={{ background: '#111' }}>🎭 Claude 3.5 Sonnet</option>
+                      <option value="openai/gpt-4o-mini" style={{ background: '#111' }}>🤖 GPT-4o Mini via OR</option>
+                    </>
+                  )}
+                  {sysConfig.aiProvider === 'ollama' && (
+                    <>
+                      <option value="llama3.2" style={{ background: '#111' }}>🦙 Llama 3.2</option>
+                      <option value="llama3.1" style={{ background: '#111' }}>🦙 Llama 3.1</option>
+                      <option value="mistral" style={{ background: '#111' }}>💨 Mistral</option>
+                      <option value="phi3" style={{ background: '#111' }}>🔵 Phi-3</option>
+                    </>
+                  )}
+                  <option value="__custom__" style={{ background: '#111' }}>✏️ Inserir ID do modelo manualmente</option>
+                </select>
+              </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                OpenRouter API Key (Opcional)
-              </label>
-              <input
-                type="password"
-                className="input-glass"
-                placeholder="sk-or-v1-..."
-                value={sysConfig.openrouterApiKey}
-                onChange={(e) => setSysConfig({ ...sysConfig, openrouterApiKey: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Google Gemini API Key (Opcional)
-              </label>
-              <input
-                type="password"
-                className="input-glass"
-                placeholder="AIzaSy..."
-                value={sysConfig.geminiApiKey}
-                onChange={(e) => setSysConfig({ ...sysConfig, geminiApiKey: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Provedor de IA Padrão do SaaS
-              </label>
-              <select
-                className="input-glass"
-                style={{ background: 'rgba(255,255,255,0.04)', color: '#fff', cursor: 'pointer' }}
-                value={sysConfig.aiProvider || 'openrouter'}
-                onChange={(e) => setSysConfig({ ...sysConfig, aiProvider: e.target.value })}
-              >
-                <option value="openrouter" style={{ background: '#111' }}>OpenRouter (Suporta DeepSeek, Llama, Gemini, Claude)</option>
-                <option value="gemini" style={{ background: '#111' }}>Google Gemini (API Direta)</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Modelo de IA Utilizado
-              </label>
-              <select
-                className="input-glass"
-                style={{ background: 'rgba(255,255,255,0.04)', color: '#fff', cursor: 'pointer' }}
-                value={sysConfig.aiModel || 'google/gemini-2.0-flash-exp:free'}
-                onChange={(e) => setSysConfig({ ...sysConfig, aiModel: e.target.value })}
-              >
-                <optgroup label="Modelos Gratuitos / Alta Performance (OpenRouter)">
-                  <option value="google/gemini-2.0-flash-exp:free" style={{ background: '#111' }}>⚡ Google Gemini 2.0 Flash (Gratuito / Recomendado)</option>
-                  <option value="deepseek/deepseek-chat" style={{ background: '#111' }}>🧠 DeepSeek V3 (DeepSeek Chat)</option>
-                  <option value="deepseek/deepseek-r1" style={{ background: '#111' }}>💡 DeepSeek R1 (Raciocínio Avançado)</option>
-                  <option value="meta-llama/llama-3.3-70b-instruct" style={{ background: '#111' }}>🦙 Meta Llama 3.3 70B</option>
-                  <option value="anthropic/claude-3.5-sonnet" style={{ background: '#111' }}>🎭 Claude 3.5 Sonnet</option>
-                  <option value="openai/gpt-4o-mini" style={{ background: '#111' }}>🤖 OpenAI GPT-4o Mini</option>
-                </optgroup>
-                <optgroup label="API Direta Google Gemini">
-                  <option value="gemini-1.5-flash" style={{ background: '#111' }}>✨ Gemini 1.5 Flash</option>
-                  <option value="gemini-2.0-flash" style={{ background: '#111' }}>🚀 Gemini 2.0 Flash</option>
-                  <option value="gemini-1.5-pro" style={{ background: '#111' }}>💎 Gemini 1.5 Pro</option>
-                </optgroup>
-              </select>
+              {/* Campo de modelo customizado */}
+              {sysConfig.aiModel === '__custom__' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                    ID do Modelo (Customizado)
+                  </label>
+                  <input
+                    type="text"
+                    className="input-glass"
+                    placeholder="Ex: google/gemini-pro-exp, gpt-4o-latest..."
+                    value={sysConfig.customModel || ''}
+                    onChange={(e) => setSysConfig({ ...sysConfig, customModel: e.target.value })}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+          {/* ─── Seção Evolution API ──────────────────────────────── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+              <span style={{ fontSize: 18 }}>💬</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>WhatsApp — Evolution API</span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  URL da API
+                </label>
+                <input
+                  type="text"
+                  className="input-glass"
+                  placeholder="https://api.ontechcg.cloud"
+                  value={sysConfig.evolutionBaseUrl}
+                  onChange={(e) => setSysConfig({ ...sysConfig, evolutionBaseUrl: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  API Key Global
+                </label>
+                <input
+                  type="password"
+                  className="input-glass"
+                  placeholder="Cole sua API Key da Evolution"
+                  value={sysConfig.evolutionApiKey}
+                  onChange={(e) => setSysConfig({ ...sysConfig, evolutionApiKey: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
             <button className="btn-primary" type="submit" disabled={savingConfig} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {savingConfig ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Crown size={16} />}
               Salvar Configurações do SaaS

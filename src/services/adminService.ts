@@ -68,8 +68,10 @@ export interface SystemConfig {
   evolutionApiKey: string
   openrouterApiKey: string
   geminiApiKey: string
+  openaiApiKey: string
   aiProvider?: string
   aiModel?: string
+  customModel?: string
 }
 
 /** Obtém as configurações globais do SaaS */
