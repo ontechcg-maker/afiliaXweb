@@ -98,16 +98,49 @@ async function requireAdmin(req, res, next) {
   res.status(403).json({ error: 'Acesso restrito ao administrador do SaaS.' })
 }
 
-// ─── Helper: busca perfil do usuário ────────────────────────────
-async function getUserProfile(userId) {
-  if (!supabaseAdmin) return null
-  const { data } = await supabaseAdmin.from('profiles').select('*').eq('id', userId).single()
-  return data
+// ─── Helper: busca ou cria perfil do usuário ──────────────────────
+async function getUserProfile(userParam) {
+  const userId = typeof userParam === 'object' && userParam?.id ? userParam.id : String(userParam || '')
+  const userEmail = typeof userParam === 'object' && userParam?.email ? userParam.email : ''
+  if (!userId) return null
+
+  const instanceName = `usr_${userId.replace(/-/g, '')}`
+
+  if (!supabaseAdmin) {
+    return { id: userId, email: userEmail, instance_name: instanceName, instance_status: 'disconnected' }
+  }
+
+  try {
+    const { data } = await supabaseAdmin.from('profiles').select('*').eq('id', userId).maybeSingle()
+    if (data && data.instance_name) {
+      return data
+    }
+
+    // Perfil não existe ou está sem instance_name -> cria/atualiza automaticamente
+    const profilePayload = {
+      id: userId,
+      email: userEmail || data?.email || '',
+      instance_name: instanceName,
+      instance_status: data?.instance_status || 'disconnected',
+      role: data?.role || 'user',
+    }
+
+    const { data: upserted } = await supabaseAdmin
+      .from('profiles')
+      .upsert(profilePayload, { onConflict: 'id' })
+      .select('*')
+      .maybeSingle()
+
+    return upserted || profilePayload
+  } catch (e) {
+    console.error('[getUserProfile] Erro ao buscar/criar perfil:', e.message)
+    return { id: userId, email: userEmail, instance_name: instanceName, instance_status: 'disconnected' }
+  }
 }
 
 // ─── Helper: busca configurações do sistema salvas no banco ─────
 async function getSystemConfig() {
-  let baseUrl = EVOLUTION_BASE_URL
+  let baseUrl = (EVOLUTION_BASE_URL || '').replace(/\/manager.*$/i, '').replace(/\/$/, '')
   let apiKey = EVOLUTION_API_KEY
   let openrouterKey = process.env.OPENROUTER_API_KEY || ''
   let geminiKey = process.env.GEMINI_API_KEY || ''
@@ -119,7 +152,7 @@ async function getSystemConfig() {
       const { data } = await supabaseAdmin.from('system_config').select('*')
       if (data && data.length > 0) {
         const map = data.reduce((acc, i) => { acc[i.key] = i.value; return acc }, {})
-        if (map.evolution_base_url) baseUrl = map.evolution_base_url.trim().replace(/\/$/, '')
+        if (map.evolution_base_url) baseUrl = map.evolution_base_url.trim().replace(/\/manager.*$/i, '').replace(/\/$/, '')
         if (map.evolution_api_key) apiKey = map.evolution_api_key.trim()
         if (map.openrouter_api_key) openrouterKey = map.openrouter_api_key.trim()
         if (map.gemini_api_key) geminiKey = map.gemini_api_key.trim()
@@ -383,7 +416,7 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
  */
 router.post('/whatsapp/connect', requireAuth, async (req, res) => {
   try {
-    const profile = await getUserProfile(req.user.id)
+    const profile = await getUserProfile(req.user)
     if (!profile?.instance_name) {
       return res.status(400).json({ error: 'Perfil de usuário não encontrado.' })
     }
@@ -419,7 +452,7 @@ router.post('/whatsapp/connect', requireAuth, async (req, res) => {
  */
 router.get('/whatsapp/status', requireAuth, async (req, res) => {
   try {
-    const profile = await getUserProfile(req.user.id)
+    const profile = await getUserProfile(req.user)
     if (!profile?.instance_name) {
       return res.json({ connected: false, instanceName: null })
     }
@@ -452,7 +485,7 @@ router.get('/whatsapp/status', requireAuth, async (req, res) => {
  */
 router.post('/whatsapp/disconnect', requireAuth, async (req, res) => {
   try {
-    const profile = await getUserProfile(req.user.id)
+    const profile = await getUserProfile(req.user)
     if (!profile?.instance_name) return res.json({ success: true })
 
     await evolutionFetch(`/instance/logout/${profile.instance_name}`, 'DELETE').catch(() => {})
@@ -474,7 +507,7 @@ router.post('/whatsapp/disconnect', requireAuth, async (req, res) => {
  */
 router.get('/whatsapp/groups', requireAuth, async (req, res) => {
   try {
-    const profile = await getUserProfile(req.user.id)
+    const profile = await getUserProfile(req.user)
     if (!profile?.instance_name) return res.json([])
 
     const data = await evolutionFetch(
@@ -509,7 +542,7 @@ router.post('/whatsapp/send-text', requireAuth, async (req, res) => {
   if (!groupId || !text) return res.status(400).json({ error: 'groupId e text são obrigatórios.' })
 
   try {
-    const profile = await getUserProfile(req.user.id)
+    const profile = await getUserProfile(req.user)
     if (!profile?.instance_name) {
       return res.status(400).json({ error: 'WhatsApp não conectado.' })
     }
@@ -532,7 +565,7 @@ router.post('/whatsapp/send-media', requireAuth, async (req, res) => {
   if (!groupId || !mediaUrl) return res.status(400).json({ error: 'groupId e mediaUrl são obrigatórios.' })
 
   try {
-    const profile = await getUserProfile(req.user.id)
+    const profile = await getUserProfile(req.user)
     if (!profile?.instance_name) {
       return res.status(400).json({ error: 'WhatsApp não conectado.' })
     }
