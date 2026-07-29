@@ -782,6 +782,8 @@ async function runScheduler() {
           success = true
         } catch (e) {
           console.error(`[Scheduler] Erro envio para ${target}:`, e.message)
+        }
+      }
     }
 
     await supabaseAdmin
