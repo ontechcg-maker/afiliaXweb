@@ -23,12 +23,21 @@ export async function login(
   password: string
 ): Promise<{ success: boolean; error?: string }> {
   if (!supabase) return { success: false, error: 'Supabase não configurado. Verifique o arquivo .env.local.' }
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error) return { success: false, error: error.message }
-  if (data?.session?.access_token) {
-    localStorage.setItem('afiliax_auth_token', data.session.access_token)
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      if (error.message.includes('Failed to fetch') || error.message.includes('fetch')) {
+        return { success: false, error: 'Falha de conexão com o Supabase. Por favor, reinicie o Vite (npm run dev) e recarregue a página (Ctrl+F5).' }
+      }
+      return { success: false, error: error.message }
+    }
+    if (data?.session?.access_token) {
+      localStorage.setItem('afiliax_auth_token', data.session.access_token)
+    }
+    return { success: true }
+  } catch (e: any) {
+    return { success: false, error: e.message || 'Erro de conexão ao efetuar login.' }
   }
-  return { success: true }
 }
 
 /** Envia e-mail de recuperação de senha */
@@ -58,13 +67,22 @@ export async function register(
   password: string
 ): Promise<{ success: boolean; error?: string; needsConfirmation?: boolean }> {
   if (!supabase) return { success: false, error: 'Supabase não configurado.' }
-  const { data, error } = await supabase.auth.signUp({ email, password })
-  if (error) return { success: false, error: error.message }
-  if (data?.session?.access_token) {
-    localStorage.setItem('afiliax_auth_token', data.session.access_token)
+  try {
+    const { data, error } = await supabase.auth.signUp({ email, password })
+    if (error) {
+      if (error.message.includes('Failed to fetch') || error.message.includes('fetch')) {
+        return { success: false, error: 'Falha de conexão com o Supabase. Por favor, reinicie o Vite (npm run dev) e recarregue a página (Ctrl+F5).' }
+      }
+      return { success: false, error: error.message }
+    }
+    if (data?.session?.access_token) {
+      localStorage.setItem('afiliax_auth_token', data.session.access_token)
+    }
+    const needsConfirmation = !data.session
+    return { success: true, needsConfirmation }
+  } catch (e: any) {
+    return { success: false, error: e.message || 'Erro de conexão ao registrar.' }
   }
-  const needsConfirmation = !data.session
-  return { success: true, needsConfirmation }
 }
 
 /** Desloga o usuário atual */
