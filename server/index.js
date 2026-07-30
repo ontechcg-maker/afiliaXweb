@@ -565,16 +565,109 @@ function cleanCopyText(rawText) {
 }
 
 // ─── Rota de Geração de Copy via IA (Centralizada no Backend do SaaS) ───
+// ─── Rota de Geração de Copy via IA (Centralizada no Backend do SaaS) ───
 router.post('/generate-copy', requireAuth, async (req, res) => {
   const { prompt } = req.body || {}
   if (!prompt) return res.status(400).json({ error: 'Prompt não fornecido.' })
 
   const { openrouterKey, geminiKey, openaiApiKey, aiProvider, aiModel } = await getSystemConfig()
 
-  try {
-    // 1. Provedor OpenAI se selecionado
-    if (aiProvider === 'openai' && openaiApiKey) {
-      const targetModel = aiModel && !aiModel.includes('/') ? aiModel : 'gpt-4o-mini'
+  const attempts = []
+
+  // 1. Provedor Gemini (se configurado ou como principal)
+  if (geminiKey && geminiKey.trim()) {
+    let modelName = (aiModel || 'gemini-2.0-flash').replace(/^google\//, '').replace(/:\w+$/, '')
+    if (modelName === 'gemini-2.0-flash-exp' || modelName === 'gemini-exp-1206' || modelName === '__custom__') {
+      modelName = 'gemini-2.0-flash'
+    }
+
+    const fallbackModels = Array.from(new Set([
+      modelName,
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-2.5-flash',
+      'gemini-1.5-pro',
+    ]))
+
+    for (const m of fallbackModels) {
+      for (const ver of ['v1beta', 'v1']) {
+        try {
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/${ver}/models/${m}:generateContent?key=${geminiKey.trim()}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.7, maxOutputTokens: 2000 },
+              }),
+            }
+          )
+          const data = await response.json()
+          if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+            return res.json({ copy: cleanCopyText(data.candidates[0].content.parts[0].text) })
+          }
+          if (data.error?.message) {
+            attempts.push(`Gemini (${m}): ${data.error.message}`)
+          }
+        } catch (err) {
+          attempts.push(`Gemini (${m}): ${err.message}`)
+        }
+      }
+    }
+  }
+
+  // 2. Provedor OpenRouter (se configurado)
+  if (openrouterKey && openrouterKey.trim()) {
+    const targetOpenRouterModel = aiModel && aiModel !== '__custom__' && aiModel !== 'google/gemini-2.0-flash-exp:free' 
+      ? aiModel 
+      : 'meta-llama/llama-3.3-70b-instruct:free'
+
+    const modelsToTry = Array.from(new Set([
+      targetOpenRouterModel,
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemini-2.0-flash-exp:free',
+      'deepseek/deepseek-r1:free',
+      'qwen/qwen-2.5-coder-32b-instruct:free',
+    ]))
+
+    for (const m of modelsToTry) {
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openrouterKey.trim()}`,
+            'HTTP-Referer': 'https://app.ontechcg.cloud',
+            'X-Title': 'AfiliaX SaaS',
+          },
+          body: JSON.stringify({
+            model: m,
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 2000,
+            temperature: 0.7,
+          }),
+        })
+        const data = await response.json()
+        if (response.ok && data.choices?.[0]?.message?.content) {
+          return res.json({ copy: cleanCopyText(data.choices[0].message.content) })
+        }
+        if (data.error?.message) {
+          attempts.push(`OpenRouter (${m}): ${data.error.message}`)
+          if (data.error.code === 401 || data.error.message.includes('User not found')) {
+            break // Chave inválida, não tenta outros modelos do OpenRouter
+          }
+        }
+      } catch (err) {
+        attempts.push(`OpenRouter (${m}): ${err.message}`)
+      }
+    }
+  }
+
+  // 3. Provedor OpenAI (se configurado)
+  if (openaiApiKey && openaiApiKey.trim()) {
+    try {
+      const targetModel = aiModel && !aiModel.includes('/') && aiModel !== '__custom__' ? aiModel : 'gpt-4o-mini'
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -593,95 +686,22 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
         return res.json({ copy: cleanCopyText(data.choices[0].message.content) })
       }
       if (data.error?.message) {
-        throw new Error(`Erro na OpenAI (${targetModel}): ${data.error.message}`)
+        attempts.push(`OpenAI (${targetModel}): ${data.error.message}`)
       }
+    } catch (err) {
+      attempts.push(`OpenAI: ${err.message}`)
     }
-
-    // 2. Provedor Gemini Direto se selecionado e com chave
-    if ((aiProvider === 'gemini' || (!openrouterKey && !openaiApiKey)) && geminiKey) {
-      let modelName = (aiModel || 'gemini-2.0-flash').replace(/^google\//, '').replace(/:\w+$/, '')
-      if (modelName === 'gemini-2.0-flash-exp' || modelName === 'gemini-exp-1206') {
-        modelName = 'gemini-2.0-flash'
-      }
-
-      const fallbackModels = Array.from(new Set([
-        modelName,
-        'gemini-2.0-flash',
-        'gemini-1.5-flash',
-        'gemini-2.5-flash',
-        'gemini-1.5-pro',
-        'gemini-1.5-flash-8b',
-      ]))
-
-      let lastGeminiError = ''
-
-      for (const m of fallbackModels) {
-        for (const ver of ['v1beta', 'v1']) {
-          try {
-            const response = await fetch(
-              `https://generativelanguage.googleapis.com/${ver}/models/${m}:generateContent?key=${geminiKey.trim()}`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  contents: [{ parts: [{ text: prompt }] }],
-                  generationConfig: { temperature: 0.7, maxOutputTokens: 2000 },
-                }),
-              }
-            )
-            const data = await response.json()
-            if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-              return res.json({ copy: cleanCopyText(data.candidates[0].content.parts[0].text) })
-            }
-            if (data.error?.message) {
-              lastGeminiError = data.error.message
-            }
-          } catch (err) {
-            lastGeminiError = err.message
-          }
-        }
-      }
-
-      // Se falhar e não houver chave OpenRouter para fallback
-      if (!openrouterKey) {
-        throw new Error(`Google Gemini (${modelName}): ${lastGeminiError || 'Erro ao comunicar com a API do Gemini'}`)
-      }
-    }
-
-    // 3. Provedor OpenRouter (Suporta qualquer modelo: DeepSeek, Llama, Gemini, Claude, etc.)
-    const targetOpenRouterModel = aiModel && aiModel !== 'google/gemini-2.0-flash-exp:free' ? aiModel : 'meta-llama/llama-3.3-70b-instruct'
-    const headers = {
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://app.ontechcg.cloud',
-      'X-Title': 'AfiliaX SaaS',
-    }
-    if (openrouterKey) {
-      headers['Authorization'] = `Bearer ${openrouterKey.trim()}`
-    }
-
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: targetOpenRouterModel,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 2000,
-        temperature: 0.7,
-      }),
-    })
-    const data = await response.json()
-    if (response.ok && data.choices?.[0]?.message?.content) {
-      return res.json({ copy: cleanCopyText(data.choices[0].message.content) })
-    }
-
-    if (data.error?.message) {
-      throw new Error(`Erro na IA (${targetOpenRouterModel}): ${data.error.message}`)
-    }
-
-    throw new Error('Não foi possível gerar a copy com o modelo selecionado.')
-  } catch (e) {
-    res.status(500).json({ error: e.message || 'Erro ao gerar copy por IA.' })
   }
+
+  if (attempts.length > 0) {
+    return res.status(500).json({
+      error: `Não foi possível gerar a copy. Detalhes: ${attempts.join(' | ')}. Dica: Acesse o Painel Admin > Configurações de IA e verifique suas chaves de API.`
+    })
+  }
+
+  return res.status(400).json({
+    error: 'Nenhuma chave de API de Inteligência Artificial está configurada no servidor. Acesse o Painel Admin > Configurações de IA e insira uma chave de API (Gemini, OpenRouter ou OpenAI), ou configure sua chave pessoal na tela de Configurações.'
+  })
 })
 
 
