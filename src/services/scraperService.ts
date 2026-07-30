@@ -1,3 +1,5 @@
+import { getAuthToken } from './authService'
+
 export interface ScrapedProduct {
   title: string
   priceFrom?: number
@@ -38,7 +40,7 @@ export async function unshortenUrl(url: string): Promise<string> {
 
   // Tenta via API backend (sem restrições de CORS, server-side)
   try {
-    const token = localStorage.getItem('afiliax_auth_token')
+    const token = await getAuthToken()
     const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
     const backendRes = await fetch(`/api/unshorten?url=${encodeURIComponent(url)}`, { headers })
     if (backendRes.ok) {
@@ -218,7 +220,7 @@ export async function scrapeProduct(rawUrl: string): Promise<ScrapedProduct> {
 
   // Tenta via API backend (server-side, sem bloqueios de CORS)
   try {
-    const token = localStorage.getItem('afiliax_auth_token')
+    const token = await getAuthToken()
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (token) headers['Authorization'] = `Bearer ${token}`
     const backendRes = await fetch('/api/fetch-html', {

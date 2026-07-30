@@ -940,7 +940,7 @@ router.get('/analytics/summary', requireAuth, async (req, res) => {
 // ─── Rotas de Scraping Server-Side (sem bloqueios de CORS) ──────
 
 /** GET /unshorten?url=... — Expande links curtos (meli.la, amzn.to, etc.) server-side */
-router.get('/unshorten', requireAuth, async (req, res) => {
+router.get('/unshorten', async (req, res) => {
   const rawUrl = String(req.query.url || '')
   if (!rawUrl) return res.status(400).json({ error: 'url é obrigatório.' })
 
@@ -978,7 +978,7 @@ router.get('/unshorten', requireAuth, async (req, res) => {
 })
 
 /** POST /fetch-html — Busca o HTML de uma URL server-side (sem CORS) */
-router.post('/fetch-html', requireAuth, async (req, res) => {
+router.post('/fetch-html', async (req, res) => {
   const { url } = req.body || {}
   if (!url) return res.status(400).json({ error: 'url é obrigatório.' })
 
