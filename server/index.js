@@ -47,7 +47,8 @@ try {
 // ─── App Express ─────────────────────────────────────────────────
 const app = express()
 app.use(cors({ origin: allowedOrigins, credentials: true }))
-app.use(express.json({ limit: '10mb' }))
+app.use(express.json({ limit: '100mb' }))
+app.use(express.urlencoded({ limit: '100mb', extended: true }))
 
 // Router para todas as rotas da API (com suporte ao stripprefix do Traefik)
 const router = express.Router()
@@ -225,7 +226,7 @@ async function getSystemConfig() {
 }
 
 // ─── Helper: chama Evolution API ────────────────────────────────
-async function evolutionFetch(path, method = 'GET', body = null) {
+async function evolutionFetch(path, method = 'GET', body = null, timeoutMs = 30000) {
   const { baseUrl, apiKey } = await getSystemConfig()
 
   if (!baseUrl || !apiKey) {
@@ -234,7 +235,7 @@ async function evolutionFetch(path, method = 'GET', body = null) {
   const opts = {
     method,
     headers: { 'Content-Type': 'application/json', apikey: apiKey },
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(timeoutMs),
   }
   if (body) opts.body = JSON.stringify(body)
   const res = await fetch(`${baseUrl}${path}`, opts)
@@ -1093,7 +1094,7 @@ router.post('/whatsapp/send-text', requireAuth, checkPostLimit, async (req, res)
  * Envia mensagem com imagem/vídeo via instância do usuário.
  */
 router.post('/whatsapp/send-media', requireAuth, checkPostLimit, async (req, res) => {
-  const { groupId, mediaUrl, caption, mediaType = 'image' } = req.body || {}
+  const { groupId, mediaUrl, caption, mediaType } = req.body || {}
   if (!groupId || !mediaUrl) return res.status(400).json({ error: 'groupId e mediaUrl são obrigatórios.' })
 
   try {
@@ -1110,24 +1111,75 @@ router.post('/whatsapp/send-media', requireAuth, checkPostLimit, async (req, res
     const isDataUri = mediaUrl.startsWith('data:')
     const isHttp = mediaUrl.startsWith('http')
 
+    let finalMediaType = mediaType || 'image'
+    let mimetype = 'image/jpeg'
+    let fileName = 'imagem.jpg'
+
+    if (isDataUri) {
+      const mimeMatch = mediaUrl.match(/^data:([^;]+);base64,/)
+      if (mimeMatch) {
+        mimetype = mimeMatch[1]
+        if (mimetype.startsWith('video/')) {
+          finalMediaType = 'video'
+          const ext = mimetype.split('/')[1] || 'mp4'
+          fileName = `video.${ext}`
+        } else if (mimetype.startsWith('image/')) {
+          finalMediaType = 'image'
+          const ext = mimetype.split('/')[1] || 'jpeg'
+          fileName = `imagem.${ext}`
+        }
+      }
+    } else if (isHttp) {
+      const lower = mediaUrl.toLowerCase()
+      if (lower.includes('.mp4') || lower.includes('.webm') || lower.includes('.mov') || lower.includes('.avi') || lower.includes('.mkv') || lower.includes('.m4v')) {
+        finalMediaType = 'video'
+        if (lower.includes('.webm')) mimetype = 'video/webm'
+        else if (lower.includes('.mov')) mimetype = 'video/quicktime'
+        else mimetype = 'video/mp4'
+        fileName = 'video.mp4'
+      } else if (lower.includes('.png')) {
+        mimetype = 'image/png'
+        fileName = 'imagem.png'
+      } else if (lower.includes('.gif')) {
+        mimetype = 'image/gif'
+        fileName = 'imagem.gif'
+      } else if (lower.includes('.webp')) {
+        mimetype = 'image/webp'
+        fileName = 'imagem.webp'
+      }
+    }
+
+    // Se mediaType foi forçado como video
+    if (mediaType === 'video') {
+      finalMediaType = 'video'
+      if (!mimetype.startsWith('video/')) mimetype = 'video/mp4'
+      if (!fileName.startsWith('video')) fileName = 'video.mp4'
+    }
+
     const payload = {
-      mediaType: mediaType === 'video' ? 'video' : 'image',
-      mediatype: mediaType === 'video' ? 'video' : 'image',
-      media: isHttp ? mediaUrl : (isDataUri ? mediaUrl.split(',')[1] : mediaUrl),
+      mediaType: finalMediaType,
+      mediatype: finalMediaType,
+      media: isHttp ? mediaUrl : (isDataUri ? mediaUrl.substring(mediaUrl.indexOf(',') + 1) : mediaUrl),
       mediaUrl: isHttp ? mediaUrl : undefined,
       caption: caption || '',
-      fileName: mediaType === 'video' ? 'video.mp4' : 'imagem.jpg',
-      mimetype: mediaType === 'video' ? 'video/mp4' : 'image/jpeg',
+      text: caption || '',
+      fileName,
+      mimetype,
     }
 
     let successCount = 0
     let lastError = ''
     for (const number of targets) {
       try {
-        await evolutionFetch(`/message/sendMedia/${profile.instance_name}`, 'POST', {
-          ...payload,
-          number,
-        })
+        await evolutionFetch(
+          `/message/sendMedia/${profile.instance_name}`,
+          'POST',
+          {
+            ...payload,
+            number,
+          },
+          180000 // Timeout estendido de 3 minutos para upload de vídeos
+        )
         successCount++
       } catch (err) {
         lastError = err.message

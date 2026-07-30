@@ -81,9 +81,13 @@ export async function sendMediaMessage(
   caption: string,
   mediaType: 'image' | 'video' = 'image'
 ): Promise<void> {
+  const isVideo = mediaType === 'video' ||
+    mediaUrl.startsWith('data:video/') ||
+    /\.(mp4|webm|mov|avi|mkv|m4v)(\?.*)?$/i.test(mediaUrl)
+
   await apiCall('/whatsapp/send-media', {
     method: 'POST',
-    body: JSON.stringify({ groupId, mediaUrl, caption, mediaType }),
+    body: JSON.stringify({ groupId, mediaUrl, caption, mediaType: isVideo ? 'video' : 'image' }),
   })
 }
 

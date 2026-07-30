@@ -241,7 +241,9 @@ export default function NewPost() {
 
           setAntiBanProgressMsg(`Enviando WhatsApp para "${groupName}"...`)
           if (customImage) {
-            await sendMediaMessage(groupId, customImage, copy, 'image')
+            const isVideo = customImage.startsWith('data:video/') ||
+              /\.(mp4|webm|mov|avi|mkv|m4v)(\?.*)?$/i.test(customImage)
+            await sendMediaMessage(groupId, customImage, copy, isVideo ? 'video' : 'image')
           } else {
             await sendTextMessage(groupId, copy)
           }
