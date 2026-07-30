@@ -918,6 +918,76 @@ router.get('/analytics/summary', requireAuth, async (req, res) => {
   })
 })
 
+// ─── Rotas de Scraping Server-Side (sem bloqueios de CORS) ──────
+
+/** GET /unshorten?url=... — Expande links curtos (meli.la, amzn.to, etc.) server-side */
+router.get('/unshorten', requireAuth, async (req, res) => {
+  const rawUrl = String(req.query.url || '')
+  if (!rawUrl) return res.status(400).json({ error: 'url é obrigatório.' })
+
+  try {
+    // Resolve redirecionamentos HTTP encadeados com seguimento de Location headers
+    let currentUrl = rawUrl
+    let maxRedirects = 10
+    while (maxRedirects-- > 0) {
+      const resp = await fetch(currentUrl, {
+        method: 'HEAD',
+        redirect: 'manual',
+        headers: {
+          'User-Agent': USER_AGENT,
+          Accept: 'text/html,*/*',
+        },
+        signal: AbortSignal.timeout(10000),
+      }).catch(() => null)
+
+      if (!resp) break
+
+      // Segue os redirecionamentos 3xx
+      if (resp.status >= 300 && resp.status < 400) {
+        const loc = resp.headers.get('location')
+        if (!loc || loc === currentUrl) break
+        currentUrl = loc.startsWith('http') ? loc : new URL(loc, currentUrl).href
+      } else {
+        // Chegou na URL final
+        break
+      }
+    }
+    res.json({ finalUrl: currentUrl })
+  } catch (e) {
+    res.json({ finalUrl: rawUrl })
+  }
+})
+
+/** POST /fetch-html — Busca o HTML de uma URL server-side (sem CORS) */
+router.post('/fetch-html', requireAuth, async (req, res) => {
+  const { url } = req.body || {}
+  if (!url) return res.status(400).json({ error: 'url é obrigatório.' })
+
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
+        'Cache-Control': 'no-cache',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
+    })
+
+    if (!resp.ok) {
+      return res.json({ ok: false, html: '' })
+    }
+
+    // Respeita limite de 5MB para não travar o servidor
+    const buffer = await resp.arrayBuffer()
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(buffer.slice(0, 5 * 1024 * 1024))
+    res.json({ ok: true, html: text, finalUrl: resp.url })
+  } catch (e) {
+    res.json({ ok: false, html: '', error: e.message })
+  }
+})
+
 // Helper para incrementar o contador de postagens do usuário
 async function incrementUserPostCount(userId) {
   if (!supabaseAdmin || !userId) return
@@ -1171,11 +1241,22 @@ router.post('/schedules/trigger-due', requireAuth, async (_req, res) => {
 let schedulerRunning = false
 
 async function runScheduler() {
-  if (!supabaseAdmin || !EVOLUTION_BASE_URL) return 0
+  if (!supabaseAdmin) {
+    console.warn('[Scheduler] Supabase Admin não configurado — scheduler pausado.')
+    return 0
+  }
+  if (!EVOLUTION_BASE_URL) {
+    const { baseUrl } = await getSystemConfig().catch(() => ({ baseUrl: '' }))
+    if (!baseUrl) {
+      console.warn('[Scheduler] Evolution API não configurada — scheduler pausado.')
+      return 0
+    }
+  }
 
   const now = new Date().toISOString()
+  console.log(`[Scheduler] Ciclo iniciado às ${new Date().toLocaleTimeString('pt-BR')} | Procurando agendamentos <= ${now}`)
 
-  // 1. Busca todos os agendamentos pendentes com suas respectivas ofertas (sem join problemático no PostgREST)
+  // 1. Busca todos os agendamentos pendentes com suas respectivas ofertas E user_id
   const { data: duePosts, error } = await supabaseAdmin
     .from('schedules')
     .select('*, offers(*)')
@@ -1187,14 +1268,22 @@ async function runScheduler() {
     return 0
   }
 
-  if (!duePosts || duePosts.length === 0) return 0
+  if (!duePosts || duePosts.length === 0) {
+    console.log('[Scheduler] Nenhum agendamento pendente no momento.')
+    return 0
+  }
 
   console.log(`[Scheduler] Processando ${duePosts.length} post(s) agendado(s)...`)
   let totalProcessed = 0
 
   for (const schedule of duePosts) {
     const offer = schedule.offers
-    if (!offer) continue
+    if (!offer) {
+      console.warn(`[Scheduler] Agendamento ${schedule.id} sem oferta vinculada — pulando.`)
+      continue
+    }
+
+    console.log(`[Scheduler] Agendamento ${schedule.id}: user_id=${schedule.user_id || 'null'}, título="${offer.title?.substring(0, 40)}"`)
 
     // 2. Busca o perfil do usuário proprietário do agendamento
     let instanceName = null
@@ -1209,6 +1298,7 @@ async function runScheduler() {
 
       instanceName = userProfile?.instance_name
       instanceStatus = userProfile?.instance_status || 'disconnected'
+      console.log(`[Scheduler]   → Instância do usuário: ${instanceName || 'não encontrada'} (${instanceStatus})`)
     }
 
     // Fallback: se não tiver user_id no agendamento, tenta usar a primeira instância conectada
@@ -1223,6 +1313,7 @@ async function runScheduler() {
       if (fallbackProfile) {
         instanceName = fallbackProfile.instance_name
         instanceStatus = fallbackProfile.instance_status
+        console.log(`[Scheduler]   → Usando instância de fallback: ${instanceName} (${instanceStatus})`)
       }
     }
 
