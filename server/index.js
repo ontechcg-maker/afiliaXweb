@@ -614,7 +614,7 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
 
     // 2. Provedor Gemini Direto se selecionado e com chave
     if ((aiProvider === 'gemini' || (!openrouterKey && !openaiApiKey)) && geminiKey) {
-      const targetModel = aiModel && !aiModel.includes('/') ? aiModel : 'gemini-1.5-flash'
+      const targetModel = (aiModel || 'gemini-1.5-flash').replace(/^google\//, '').replace(/:\w+$/, '')
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${geminiKey.trim()}`,
         {
