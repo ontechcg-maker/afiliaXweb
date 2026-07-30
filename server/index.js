@@ -371,7 +371,7 @@ router.get('/admin/users', requireAuth, requireAdmin, async (_req, res) => {
     // 2. Busca todos os perfis na tabela public.profiles
     const { data: profiles } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, instance_name, instance_status, whatsapp_number, role, plan_tier, daily_posts_limit, is_blocked, created_at')
+      .select('*')
 
     const profilesMap = new Map((profiles || []).map((p) => [p.id, p]))
     const combinedUsers = []
