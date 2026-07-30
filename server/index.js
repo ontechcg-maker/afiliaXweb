@@ -856,6 +856,65 @@ router.get('/whatsapp/groups', requireAuth, async (req, res) => {
   }
 })
 
+/**
+ * POST /whatsapp/create-group
+ * Cria um novo grupo no WhatsApp através da instância do usuário na Evolution API.
+ */
+router.post('/whatsapp/create-group', requireAuth, async (req, res) => {
+  try {
+    const profile = await getUserProfile(req.user)
+    if (!profile?.instance_name) {
+      return res.status(400).json({ error: 'Perfil de usuário ou instância WhatsApp não encontrada.' })
+    }
+    const { name, subject, description, participants } = req.body || {}
+    const groupName = (subject || name || '').trim()
+
+    if (!groupName) {
+      return res.status(400).json({ error: 'O nome do grupo é obrigatório.' })
+    }
+
+    let participantNumbers = []
+    if (Array.isArray(participants)) {
+      participantNumbers = participants
+        .map((p) => String(p).replace(/\D/g, ''))
+        .filter((p) => p.length >= 10)
+    }
+
+    const payload = {
+      subject: groupName,
+      description: description || '',
+      participants: participantNumbers,
+    }
+
+    const createRes = await evolutionFetch(`/group/create/${profile.instance_name}`, 'POST', payload)
+
+    const groupId = createRes?.id || createRes?.jid || createRes?.groupJid || createRes?.response?.id || ''
+    
+    let inviteLink = ''
+    if (groupId) {
+      try {
+        const inviteRes = await evolutionFetch(`/group/inviteCode/${profile.instance_name}?groupJid=${encodeURIComponent(groupId)}`)
+        const code = inviteRes?.code || inviteRes?.inviteCode || ''
+        if (code) {
+          inviteLink = `https://chat.whatsapp.com/${code}`
+        }
+      } catch {}
+    }
+
+    res.json({
+      success: true,
+      group: {
+        id: groupId,
+        name: groupName,
+        description: description || '',
+        inviteLink,
+      },
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Erro ao criar grupo no WhatsApp.' })
+  }
+})
+
 // ─── Endpoints de Rastreamento de Cliques (Click Analytics & Shortener) ───
 router.post('/shorten-link', requireAuth, async (req, res) => {
   const { targetUrl, offerId, channelType } = req.body || {}

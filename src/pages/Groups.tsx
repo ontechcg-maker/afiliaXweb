@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { RefreshCw, QrCode, Loader, Users, LogOut, Wifi, WifiOff, Smartphone, Plus, Trash2, Send, MessageSquare } from 'lucide-react'
+import { RefreshCw, QrCode, Loader, Users, LogOut, Wifi, WifiOff, Smartphone, Plus, Trash2, Send, MessageSquare, CheckCircle, Copy, Link } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import {
   connectWhatsApp,
   getConnectionStatus,
   disconnectWhatsApp,
   getGroups,
+  createWhatsAppGroup,
   type WhatsAppGroup,
 } from '../services/whatsappService'
 import {
@@ -28,6 +29,16 @@ export default function Groups() {
   const [error, setError] = useState<string | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // WhatsApp Group Creation State
+  const [showCreateGroup, setShowCreateGroup] = useState(false)
+  const [newGroupName, setNewGroupName] = useState('')
+  const [newGroupDesc, setNewGroupDesc] = useState('')
+  const [newGroupParticipants, setNewGroupParticipants] = useState('')
+  const [creatingGroup, setCreatingGroup] = useState(false)
+  const [groupSuccessMsg, setGroupSuccessMsg] = useState<{ name: string; inviteLink?: string } | null>(null)
+  const [groupErrorMsg, setGroupErrorMsg] = useState<string | null>(null)
+  const [copiedLink, setCopiedLink] = useState(false)
+
   // Discord State
   const [discordChannels, setDiscordChannels] = useState<DiscordChannel[]>(() => getDiscordChannels())
   const [showAddDiscord, setShowAddDiscord] = useState(false)
@@ -35,6 +46,43 @@ export default function Groups() {
   const [newDiscordWebhook, setNewDiscordWebhook] = useState('')
   const [testingDiscordId, setTestingDiscordId] = useState<string | null>(null)
   const [discordStatusMsg, setDiscordStatusMsg] = useState<{ id?: string; text: string; success: boolean } | null>(null)
+
+  const handleCreateWhatsAppGroup = async () => {
+    if (!newGroupName.trim()) return
+    setCreatingGroup(true)
+    setGroupErrorMsg(null)
+    setGroupSuccessMsg(null)
+    try {
+      const participantsList = newGroupParticipants
+        .split(',')
+        .map((p) => p.trim())
+        .filter((p) => p.length >= 10)
+
+      const result = await createWhatsAppGroup({
+        name: newGroupName.trim(),
+        description: newGroupDesc.trim() || undefined,
+        participants: participantsList.length > 0 ? participantsList : undefined,
+      })
+
+      if (result.success && result.group) {
+        setGroupSuccessMsg({
+          name: result.group.name,
+          inviteLink: result.group.inviteLink,
+        })
+        setNewGroupName('')
+        setNewGroupDesc('')
+        setNewGroupParticipants('')
+        setShowCreateGroup(false)
+        await loadGroups()
+      } else {
+        setGroupErrorMsg(result.error || 'Erro ao criar grupo no WhatsApp.')
+      }
+    } catch (e: any) {
+      setGroupErrorMsg(e.message || 'Falha de conexão ao criar grupo.')
+    } finally {
+      setCreatingGroup(false)
+    }
+  }
 
   const handleAddDiscord = () => {
     if (!newDiscordName.trim() || !newDiscordWebhook.trim()) return
@@ -257,11 +305,172 @@ export default function Groups() {
                 Seus Grupos ({groups.length})
               </h3>
             </div>
-            <button className="btn-ghost" onClick={loadGroups} disabled={loadingGroups}>
-              <RefreshCw size={14} style={{ animation: loadingGroups ? 'spin 1s linear infinite' : undefined }} />
-              Atualizar
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={() => setShowCreateGroup(!showCreateGroup)}
+                style={{
+                  background: 'rgba(34,197,94,0.15)',
+                  border: '1px solid rgba(34,197,94,0.3)',
+                  color: '#22c55e',
+                  borderRadius: 8,
+                  padding: '6px 12px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  cursor: 'pointer',
+                  fontFamily: 'Inter, sans-serif',
+                }}
+              >
+                <Plus size={14} /> Criar Grupo WhatsApp
+              </button>
+              <button className="btn-ghost" onClick={loadGroups} disabled={loadingGroups}>
+                <RefreshCw size={14} style={{ animation: loadingGroups ? 'spin 1s linear infinite' : undefined }} />
+                Atualizar
+              </button>
+            </div>
           </div>
+
+          {/* Banner de Erro na Criação do Grupo */}
+          {groupErrorMsg && (
+            <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+              <p style={{ color: '#ef4444', fontSize: 13, margin: 0 }}>⚠️ {groupErrorMsg}</p>
+            </div>
+          )}
+
+          {/* Banner de Sucesso ao Criar Grupo */}
+          {groupSuccessMsg && (
+            <div style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 10, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: groupSuccessMsg.inviteLink ? 6 : 0 }}>
+                <CheckCircle size={16} color="#22c55e" />
+                <p style={{ color: '#22c55e', fontSize: 13, fontWeight: 700, margin: 0 }}>
+                  Grupo "{groupSuccessMsg.name}" criado com sucesso!
+                </p>
+              </div>
+              {groupSuccessMsg.inviteLink && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, background: 'rgba(0,0,0,0.2)', padding: '6px 10px', borderRadius: 6 }}>
+                  <Link size={12} color="#22d3ee" />
+                  <span style={{ fontSize: 12, color: '#22d3ee', flex: 1, wordBreak: 'break-all' }}>
+                    {groupSuccessMsg.inviteLink}
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(groupSuccessMsg.inviteLink!)
+                      setCopiedLink(true)
+                      setTimeout(() => setCopiedLink(false), 2000)
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <Copy size={12} /> {copiedLink ? 'Copiado!' : 'Copiar Link'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Formulário para Criar Novo Grupo WhatsApp */}
+          {showCreateGroup && (
+            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+              <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>
+                🟢 Novo Grupo de WhatsApp
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                    Nome do Grupo *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Ofertas Exclusivas VIP 🛍️"
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      fontSize: 13,
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                    Descrição do Grupo (Opcional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Ex: Grupo oficial de cupons e achadinhos em promoção diária."
+                    value={newGroupDesc}
+                    onChange={(e) => setNewGroupDesc(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      fontSize: 13,
+                      resize: 'none',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                    Participantes Iniciais (Opcional - Telefones separados por vírgula)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 5583999999999, 5511988888888"
+                    value={newGroupParticipants}
+                    onChange={(e) => setNewGroupParticipants(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      fontSize: 13,
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+                  <button className="btn-ghost" onClick={() => setShowCreateGroup(false)} style={{ fontSize: 12 }}>
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleCreateWhatsAppGroup}
+                    disabled={creatingGroup || !newGroupName.trim()}
+                    style={{
+                      background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                      border: 'none',
+                      borderRadius: 8,
+                      color: '#fff',
+                      padding: '6px 14px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: creatingGroup || !newGroupName.trim() ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    {creatingGroup ? (
+                      <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> Criando Grupo...</>
+                    ) : (
+                      'Criar Grupo'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {loadingGroups ? (
             <div style={{ textAlign: 'center', padding: 40, color: '#525252' }}>

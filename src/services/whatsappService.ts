@@ -66,6 +66,24 @@ export async function getGroups(): Promise<WhatsAppGroup[]> {
   }
 }
 
+export interface CreateWhatsAppGroupPayload {
+  name: string
+  description?: string
+  participants?: string[]
+}
+
+/** Cria um novo grupo no WhatsApp */
+export async function createWhatsAppGroup(payload: CreateWhatsAppGroupPayload): Promise<{
+  success: boolean
+  group?: { id: string; name: string; description?: string; inviteLink?: string }
+  error?: string
+}> {
+  return apiCall('/whatsapp/create-group', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 /** Envia mensagem de texto via WhatsApp do usuário */
 export async function sendTextMessage(groupId: string, text: string): Promise<void> {
   await apiCall('/whatsapp/send-text', {
