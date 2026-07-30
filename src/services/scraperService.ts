@@ -27,7 +27,7 @@ function detectPlatform(url: string): string {
 export async function unshortenUrl(url: string): Promise<string> {
   if (
     url.includes('mercadolivre.com.br') ||
-    url.includes('shopee.com.br') ||
+    (url.includes('shopee.com.br') && !url.includes('s.shopee.com.br')) ||
     url.includes('amazon.com.br') ||
     url.includes('magazineluiza.com.br') ||
     url.includes('aliexpress.com/item')
@@ -414,6 +414,47 @@ function parseProductFromHTML(html: string, _url: string, platform: string): Scr
     const mlPrices = parseMercadoLivrePrice(html)
     priceTo = mlPrices.priceTo
     priceFrom = mlPrices.priceFrom
+  }
+
+  if (platform === 'shopee') {
+    const descContent = getMetaContent('description') || getMetaContent('og:description')
+    if (descContent) {
+      const matchDescTitle = descContent.match(/^Compre\s+([^!\n\r]+?)\s+na\s+Shopee\s+Brasil/i)
+      if (matchDescTitle && matchDescTitle[1]) {
+        title = matchDescTitle[1].trim()
+      }
+    }
+
+    if (!title || title === 'Produto sem título') {
+      const ogTitle = getMetaContent('og:title') || getMetaContent('twitter:title')
+      if (ogTitle) {
+        title = ogTitle
+          .replace(/\s*\|\s*Shopee.*/i, '')
+          .replace(/\s*-\s*Shopee.*/i, '')
+          .replace(/\.\.\.$/, '')
+          .trim()
+      }
+    }
+
+    const ogImg = getMetaContent('og:image') || getMetaContent('og:square_image') || getMetaContent('twitter:image')
+    if (ogImg && !ogImg.includes('logo') && !ogImg.includes('homepagefe')) {
+      imageUrl = ogImg
+    }
+
+    const metaPrice = getMetaContent('product:price:amount') || getMetaContent('og:price:amount')
+    if (metaPrice) {
+      const p = parseFloat(metaPrice)
+      if (!isNaN(p) && p > 0) priceTo = p
+    }
+
+    if (!priceTo && descContent) {
+      const priceMatch = descContent.match(/R\$\s*([0-9]+(?:[.,][0-9]{2})?)/i) || html.match(/R\$\s*([0-9]+(?:[.,][0-9]{2})?)/i)
+      if (priceMatch) {
+        const raw = priceMatch[1].replace('.', '').replace(',', '.')
+        const p = parseFloat(raw)
+        if (!isNaN(p) && p > 0) priceTo = p
+      }
+    }
   }
 
   if (!priceTo) {

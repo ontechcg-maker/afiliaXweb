@@ -983,9 +983,12 @@ router.post('/fetch-html', requireAuth, async (req, res) => {
   if (!url) return res.status(400).json({ error: 'url é obrigatório.' })
 
   try {
+    const isShopee = url.includes('shopee') || url.includes('shope.ee')
+    const userAgent = isShopee ? 'WhatsApp/2.23.23.84 i' : USER_AGENT
+
     const resp = await fetch(url, {
       headers: {
-        'User-Agent': USER_AGENT,
+        'User-Agent': userAgent,
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
         'Cache-Control': 'no-cache',
