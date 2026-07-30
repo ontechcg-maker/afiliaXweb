@@ -144,15 +144,24 @@ CREATE TABLE IF NOT EXISTS public.user_settings (
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, email, role, plan_tier, daily_posts_limit)
+  INSERT INTO public.profiles (
+    id, 
+    email, 
+    role, 
+    plan_tier, 
+    daily_posts_limit
+  )
   VALUES (
     NEW.id,
     NEW.email,
-    'user',
-    'free',
-    5
+    CASE WHEN NEW.email = 'hevertonsalvador.cg@gmail.com' THEN 'admin' ELSE 'user' END,
+    CASE WHEN NEW.email = 'hevertonsalvador.cg@gmail.com' THEN 'agency' ELSE 'free' END,
+    CASE WHEN NEW.email = 'hevertonsalvador.cg@gmail.com' THEN 99999 ELSE 5 END
   )
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET
+    role = CASE WHEN EXCLUDED.email = 'hevertonsalvador.cg@gmail.com' THEN 'admin' ELSE public.profiles.role END,
+    plan_tier = CASE WHEN EXCLUDED.email = 'hevertonsalvador.cg@gmail.com' THEN 'agency' ELSE public.profiles.plan_tier END,
+    daily_posts_limit = CASE WHEN EXCLUDED.email = 'hevertonsalvador.cg@gmail.com' THEN 99999 ELSE public.profiles.daily_posts_limit END;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
