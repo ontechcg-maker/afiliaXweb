@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Clock, Plus, Calendar, Zap, AlertTriangle, CheckCircle, Send, Trash2, Loader, RefreshCw, Edit3 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { calculateHealthScore, formatScheduleTime, loadQueue, saveQueue } from '../services/schedulerService'
+import { calculateHealthScore, formatScheduleTime, loadQueue, saveQueue, syncSchedulesWithBackend, deleteBackendSchedule, updateBackendScheduleTime } from '../services/schedulerService'
 import type { ScheduledPost } from '../services/schedulerService'
 import { sendTextMessage, sendMediaMessage } from '../services/whatsappService'
 
@@ -20,10 +20,13 @@ export default function Scheduler() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
-  // Trigger de verificação no servidor ao carregar a página e a cada 20s
+  // Sincronização e disparo no backend ao carregar a página e a cada 15s
   useEffect(() => {
-    const triggerBackendScheduler = async () => {
+    const syncAndTrigger = async () => {
       try {
+        const synced = await syncSchedulesWithBackend()
+        setQueue(synced)
+
         const token = localStorage.getItem('afiliax_auth_token')
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (token) headers['Authorization'] = `Bearer ${token}`
@@ -31,8 +34,8 @@ export default function Scheduler() {
       } catch {}
     }
 
-    triggerBackendScheduler()
-    const interval = setInterval(triggerBackendScheduler, 20_000)
+    syncAndTrigger()
+    const interval = setInterval(syncAndTrigger, 15_000)
 
     const handleUpdate = () => {
       setQueue(loadQueue())
@@ -85,10 +88,11 @@ export default function Scheduler() {
     }
   }
 
-  const handleDeletePost = (id: string) => {
+  const handleDeletePost = async (id: string) => {
     const updatedQueue = queue.filter((p) => p.id !== id)
     setQueue(updatedQueue)
     saveQueue(updatedQueue)
+    await deleteBackendSchedule(id)
   }
 
   const handleClearSent = () => {
@@ -104,13 +108,14 @@ export default function Scheduler() {
     setEditDateTime(formatForDateTimeInput(post.scheduledAt))
   }
 
-  const handleSaveDate = (id: string) => {
+  const handleSaveDate = async (id: string) => {
     if (!editDateTime) return
     const newDate = new Date(editDateTime)
     const updatedQueue = queue.map((p) => (p.id === id ? { ...p, scheduledAt: newDate } : p))
     setQueue(updatedQueue)
     saveQueue(updatedQueue)
     setEditingId(null)
+    await updateBackendScheduleTime(id, newDate)
     setSuccessMsg('📅 Horário de disparo atualizado com sucesso!')
     setTimeout(() => setSuccessMsg(null), 3000)
   }

@@ -1044,6 +1044,119 @@ app.use('/api/api', router)
 app.use('/api', router)
 app.use('/', router)
 
+/** GET /schedules — Lista agendamentos do usuário logado */
+router.get('/schedules', requireAuth, async (req, res) => {
+  try {
+    if (!supabaseAdmin) return res.json([])
+
+    const { data: schedules, error } = await supabaseAdmin
+      .from('schedules')
+      .select('*, offers(*)')
+      .eq('user_id', req.user.id)
+      .order('scheduled_at', { ascending: true })
+
+    if (error) throw error
+
+    const formatted = (schedules || []).map((s) => ({
+      id: s.id,
+      offerId: s.offer_id,
+      title: s.offers?.title || 'Oferta Agendada',
+      copyText: s.offers?.copy_text || '',
+      imageUrl: s.offers?.image_url || undefined,
+      affiliateLink: s.offers?.affiliate_link || s.offers?.url || '',
+      channels: Array.isArray(s.channels) ? s.channels : [],
+      scheduledAt: s.scheduled_at,
+      status: s.status,
+    }))
+
+    res.json(formatted)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+/** POST /schedules/create — Cria oferta + agendamento no Supabase com user_id garantido */
+router.post('/schedules/create', requireAuth, async (req, res) => {
+  const { title, copyText, imageUrl, affiliateLink, url, priceFrom, priceTo, discountPct, coupon, channels, scheduledAt } = req.body || {}
+
+  try {
+    if (!supabaseAdmin) return res.status(503).json({ error: 'Supabase não disponível.' })
+
+    const { data: offer, error: offerErr } = await supabaseAdmin
+      .from('offers')
+      .insert({
+        user_id: req.user.id,
+        url: url || affiliateLink || '',
+        title: title || 'Oferta de Afiliado',
+        price_from: priceFrom || null,
+        price_to: priceTo || null,
+        discount_pct: discountPct || null,
+        coupon: coupon || null,
+        image_url: imageUrl || null,
+        affiliate_link: affiliateLink || url || '',
+        copy_text: copyText || '',
+        status: 'scheduled',
+      })
+      .select('id')
+      .single()
+
+    if (offerErr) throw offerErr
+
+    const { data: schedule, error: schedErr } = await supabaseAdmin
+      .from('schedules')
+      .insert({
+        user_id: req.user.id,
+        offer_id: offer.id,
+        channels: channels || [],
+        scheduled_at: scheduledAt || new Date().toISOString(),
+        status: 'pending',
+      })
+      .select('*')
+      .single()
+
+    if (schedErr) throw schedErr
+
+    res.json({ success: true, scheduleId: schedule.id, offerId: offer.id })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+/** POST /schedules/:id/delete — Deleta um agendamento */
+router.post('/schedules/:id/delete', requireAuth, async (req, res) => {
+  try {
+    if (!supabaseAdmin) return res.status(503).json({ error: 'Supabase não disponível.' })
+
+    await supabaseAdmin
+      .from('schedules')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id)
+
+    res.json({ success: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+/** POST /schedules/:id/update-time — Atualiza o horário de disparo */
+router.post('/schedules/:id/update-time', requireAuth, async (req, res) => {
+  const { scheduledAt } = req.body || {}
+  try {
+    if (!supabaseAdmin) return res.status(503).json({ error: 'Supabase não disponível.' })
+
+    await supabaseAdmin
+      .from('schedules')
+      .update({ scheduled_at: scheduledAt, status: 'pending' })
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id)
+
+    res.json({ success: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // ─── Rota para Forçar Execução dos Agendamentos Pendentes ───────
 router.post('/schedules/trigger-due', requireAuth, async (_req, res) => {
   try {

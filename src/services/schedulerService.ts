@@ -289,3 +289,93 @@ export function loadQueue(): ScheduledPost[] {
 
   return []
 }
+
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem('afiliax_auth_token')
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  return headers
+}
+
+/**
+ * Sincroniza a fila local com os agendamentos salvos no banco via Backend API
+ */
+export async function syncSchedulesWithBackend(): Promise<ScheduledPost[]> {
+  try {
+    const res = await fetch('/api/schedules', { headers: getAuthHeaders() })
+    if (res.ok) {
+      const data = await res.json()
+      if (Array.isArray(data)) {
+        const parsed: ScheduledPost[] = data.map((s: any) => ({
+          ...s,
+          scheduledAt: new Date(s.scheduledAt),
+        }))
+
+        saveQueue(parsed)
+        return parsed
+      }
+    }
+  } catch (e) {
+    console.error('[Scheduler] Erro ao sincronizar agendamentos com o backend:', e)
+  }
+  return loadQueue()
+}
+
+/**
+ * Cria agendamento no banco de dados via Backend API
+ */
+export async function createBackendSchedule(payload: {
+  title: string
+  copyText: string
+  imageUrl?: string
+  affiliateLink: string
+  url?: string
+  priceFrom?: number
+  priceTo?: number
+  discountPct?: number
+  coupon?: string
+  channels: ScheduleChannel[]
+  scheduledAt: Date
+}): Promise<void> {
+  try {
+    await fetch('/api/schedules/create', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        ...payload,
+        scheduledAt: payload.scheduledAt.toISOString(),
+      }),
+    })
+  } catch (e) {
+    console.error('[Scheduler] Erro ao criar agendamento no backend:', e)
+  }
+}
+
+/**
+ * Exclui um agendamento do banco via Backend API
+ */
+export async function deleteBackendSchedule(id: string): Promise<void> {
+  try {
+    await fetch(`/api/schedules/${id}/delete`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    })
+  } catch (e) {
+    console.error('[Scheduler] Erro ao excluir agendamento no backend:', e)
+  }
+}
+
+/**
+ * Atualiza o horário de disparo no banco via Backend API
+ */
+export async function updateBackendScheduleTime(id: string, newDate: Date): Promise<void> {
+  try {
+    await fetch(`/api/schedules/${id}/update-time`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ scheduledAt: newDate.toISOString() }),
+    })
+  } catch (e) {
+    console.error('[Scheduler] Erro ao atualizar horário no backend:', e)
+  }
+}

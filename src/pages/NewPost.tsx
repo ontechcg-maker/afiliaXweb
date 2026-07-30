@@ -4,8 +4,7 @@ import { scrapeProduct, type ScrapedProduct } from '../services/scraperService'
 import { generateCopy, formatCustomTemplate, type CopyTone } from '../services/aiService'
 import { useApp } from '../context/AppContext'
 import MockupPreview from '../components/MockupPreview'
-import { calculateNextScheduleTime, loadQueue, saveQueue, type ScheduledPost } from '../services/schedulerService'
-import { getSupabaseClient } from '../services/supabaseClient'
+import { calculateNextScheduleTime, loadQueue, saveQueue, createBackendSchedule, type ScheduledPost } from '../services/schedulerService'
 import { getGroups, sendTextMessage, sendMediaMessage, getRandomAntiBanDelay, delay, type WhatsAppGroup } from '../services/whatsappService'
 import { getDiscordChannels, sendDiscordMessage, type DiscordChannel } from '../services/discordService'
 
@@ -365,33 +364,20 @@ export default function NewPost() {
 
     saveQueue([...existingQueue, newOfferPost])
 
-    // Salva oferta e agendamento no Supabase (para o scheduler 24/7 do servidor)
-    const supabase = getSupabaseClient()
-    if (supabase) {
-      try {
-        const { data: offerData } = await supabase.from('offers').insert({
-          url: url,
-          title: offerTitle,
-          price_from: product?.priceFrom,
-          price_to: product?.priceTo,
-          discount_pct: product?.discountPct,
-          coupon: product?.coupon,
-          image_url: customImage,
-          affiliate_link: affiliateLink,
-          copy_text: copy,
-          status: 'scheduled',
-        }).select('id').single()
-
-        if (offerData?.id) {
-          await supabase.from('schedules').insert({
-            offer_id: offerData.id,
-            channels: channels,
-            scheduled_at: nextScheduledTime.toISOString(),
-            status: 'pending',
-          })
-        }
-      } catch {}
-    }
+    // Salva a oferta e o agendamento no backend (garantindo persistência multi-tenant com user_id)
+    await createBackendSchedule({
+      title: offerTitle,
+      copyText: copy,
+      imageUrl: customImage,
+      affiliateLink: affiliateLink,
+      url: url,
+      priceFrom: product?.priceFrom,
+      priceTo: product?.priceTo,
+      discountPct: product?.discountPct,
+      coupon: product?.coupon,
+      channels: channels,
+      scheduledAt: nextScheduledTime,
+    })
 
     setSuccessMsg('🚀 Oferta agendada e adicionada à fila com sucesso!')
     setTimeout(() => {
