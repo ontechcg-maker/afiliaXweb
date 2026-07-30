@@ -355,6 +355,8 @@ router.get('/admin/users', requireAuth, requireAdmin, async (_req, res) => {
       return res.status(503).json({ error: 'Supabase Admin não disponível no servidor.' })
     }
 
+    await autoUpgradeVipUsers().catch(() => {})
+
     // 1. Busca todos os usuários cadastrados na Autenticação (auth.users)
     let authUsers = []
     try {
@@ -1421,8 +1423,32 @@ async function keepAliveSupabase() {
   }
 }
 
-// Executa Keep-Alive imediatamente e depois a cada 3 dias (3 * 24 * 60 * 60 * 1000 ms)
+// Auto-upgrade especial para a conta VIP/Agency solicitada: wh.comercial.cg@gmail.com
+async function autoUpgradeVipUsers() {
+  if (!supabaseAdmin) return
+  try {
+    const { data: authData } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }).catch(() => ({ data: { users: [] } }))
+    const target = (authData?.users || []).find((u) => u.email?.toLowerCase() === 'wh.comercial.cg@gmail.com')
+    if (target) {
+      await supabaseAdmin.from('profiles').upsert({
+        id: target.id,
+        email: target.email,
+        plan_tier: 'agency',
+        daily_posts_limit: 99999,
+        instance_name: `usr_${target.id.replace(/-/g, '')}`,
+      }, { onConflict: 'id' })
+      console.log(`[Auto-Upgrade] Usuário ${target.email} atualizado com sucesso para o plano AGENCY (Completo/Ilimitado).`)
+    } else {
+      await supabaseAdmin.from('profiles').update({ plan_tier: 'agency', daily_posts_limit: 99999 }).eq('email', 'wh.comercial.cg@gmail.com')
+    }
+  } catch (e) {
+    console.error('[Auto-Upgrade] Erro ao atualizar usuário VIP:', e.message)
+  }
+}
+
+// Executa Keep-Alive e Auto-Upgrade VIP imediatamente
 keepAliveSupabase()
+autoUpgradeVipUsers()
 setInterval(keepAliveSupabase, 3 * 24 * 60 * 60 * 1000)
 
 // Inicia o Scheduler

@@ -23,8 +23,11 @@ export async function login(
   password: string
 ): Promise<{ success: boolean; error?: string }> {
   if (!supabase) return { success: false, error: 'Supabase não configurado. Verifique o arquivo .env.local.' }
-  const { error } = await supabase.auth.signInWithPassword({ email, password })
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) return { success: false, error: error.message }
+  if (data?.session?.access_token) {
+    localStorage.setItem('afiliax_auth_token', data.session.access_token)
+  }
   return { success: true }
 }
 
@@ -57,29 +60,60 @@ export async function register(
   if (!supabase) return { success: false, error: 'Supabase não configurado.' }
   const { data, error } = await supabase.auth.signUp({ email, password })
   if (error) return { success: false, error: error.message }
-  // Se o email de confirmação estiver desativado no Supabase, a sessão já existe
+  if (data?.session?.access_token) {
+    localStorage.setItem('afiliax_auth_token', data.session.access_token)
+  }
   const needsConfirmation = !data.session
   return { success: true, needsConfirmation }
 }
 
 /** Desloga o usuário atual */
 export async function logout(): Promise<void> {
+  localStorage.removeItem('afiliax_auth_token')
   if (!supabase) return
   await supabase.auth.signOut()
 }
 
 /** Retorna o token de acesso atual do Supabase Auth */
 export async function getAuthToken(): Promise<string | null> {
-  if (!supabase) return null
-  const { data: { session } } = await supabase.auth.getSession()
-  return session?.access_token ?? null
+  // 1. Tenta via Supabase SDK em memória / sessão
+  if (supabase) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        localStorage.setItem('afiliax_auth_token', session.access_token)
+        return session.access_token
+      }
+    } catch {}
+  }
+
+  // 2. Fallback para token afiliax no localStorage
+  const savedToken = localStorage.getItem('afiliax_auth_token')
+  if (savedToken) return savedToken
+
+  // 3. Fallback para chaves padrão do Supabase SDK no localStorage
+  try {
+    const keys = Object.keys(localStorage).filter((k) => k.startsWith('sb-') && k.endsWith('-auth-token'))
+    if (keys.length > 0) {
+      const raw = localStorage.getItem(keys[0])
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        const token = parsed?.access_token || parsed?.currentSession?.access_token
+        if (token) {
+          localStorage.setItem('afiliax_auth_token', token)
+          return token
+        }
+      }
+    }
+  } catch {}
+
+  return null
 }
 
 /** Verifica se há uma sessão ativa */
 export async function checkIsAuthenticated(): Promise<boolean> {
-  if (!supabase) return false
-  const { data: { session } } = await supabase.auth.getSession()
-  return Boolean(session)
+  const token = await getAuthToken()
+  return Boolean(token)
 }
 
 /** Header Authorization com JWT do Supabase */
