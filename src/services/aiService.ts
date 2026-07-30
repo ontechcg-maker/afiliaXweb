@@ -233,14 +233,21 @@ export async function generateCopy(
 }
 
 async function generateWithGemini(prompt: string, config: AIConfig): Promise<string> {
-  const primaryModel = config.model || 'gemini-1.5-flash'
+  let modelName = (config.model || 'gemini-2.0-flash')
+    .replace(/^google\//, '')
+    .replace(/:\w+$/, '')
+
+  if (modelName === 'gemini-2.0-flash-exp' || modelName === 'gemini-exp-1206') {
+    modelName = 'gemini-2.0-flash'
+  }
+
   const fallbackModels = [
-    primaryModel,
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-8b',
-    'gemini-1.5-pro',
+    modelName,
     'gemini-2.0-flash',
-    'gemini-1.5-flash-latest',
+    'gemini-1.5-flash',
+    'gemini-2.5-flash',
+    'gemini-1.5-pro',
+    'gemini-1.5-flash-8b',
   ]
   const modelsToTry = Array.from(new Set(fallbackModels))
 
@@ -275,7 +282,7 @@ async function generateWithGemini(prompt: string, config: AIConfig): Promise<str
   }
 
   throw new Error(
-    `Gemini API (${lastError}). DICA: Se a sua cota do Gemini estiver limitada no Google AI Studio, você pode alterar para o provedor "OpenRouter" em Configurações e usar qualquer modelo como "deepseek/deepseek-chat" ou "google/gemini-2.0-flash-exp:free".`
+    `Gemini API (${lastError}). DICA: Se a sua cota do Gemini estiver limitada no Google AI Studio, você pode alterar para o provedor "OpenRouter" em Configurações e usar qualquer modelo como "deepseek/deepseek-chat" ou "google/gemini-2.0-flash".`
   )
 }
 

@@ -614,24 +614,52 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
 
     // 2. Provedor Gemini Direto se selecionado e com chave
     if ((aiProvider === 'gemini' || (!openrouterKey && !openaiApiKey)) && geminiKey) {
-      const targetModel = (aiModel || 'gemini-1.5-flash').replace(/^google\//, '').replace(/:\w+$/, '')
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${geminiKey.trim()}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
-          }),
-        }
-      )
-      const data = await response.json()
-      if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        return res.json({ copy: cleanCopyText(data.candidates[0].content.parts[0].text) })
+      let modelName = (aiModel || 'gemini-2.0-flash').replace(/^google\//, '').replace(/:\w+$/, '')
+      if (modelName === 'gemini-2.0-flash-exp' || modelName === 'gemini-exp-1206') {
+        modelName = 'gemini-2.0-flash'
       }
-      if (data.error?.message) {
-        throw new Error(`Erro no Google Gemini (${targetModel}): ${data.error.message}`)
+
+      const fallbackModels = Array.from(new Set([
+        modelName,
+        'gemini-2.0-flash',
+        'gemini-1.5-flash',
+        'gemini-2.5-flash',
+        'gemini-1.5-pro',
+        'gemini-1.5-flash-8b',
+      ]))
+
+      let lastGeminiError = ''
+
+      for (const m of fallbackModels) {
+        for (const ver of ['v1beta', 'v1']) {
+          try {
+            const response = await fetch(
+              `https://generativelanguage.googleapis.com/${ver}/models/${m}:generateContent?key=${geminiKey.trim()}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: prompt }] }],
+                  generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
+                }),
+              }
+            )
+            const data = await response.json()
+            if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+              return res.json({ copy: cleanCopyText(data.candidates[0].content.parts[0].text) })
+            }
+            if (data.error?.message) {
+              lastGeminiError = data.error.message
+            }
+          } catch (err) {
+            lastGeminiError = err.message
+          }
+        }
+      }
+
+      // Se falhar e não houver chave OpenRouter para fallback
+      if (!openrouterKey) {
+        throw new Error(`Google Gemini (${modelName}): ${lastGeminiError || 'Erro ao comunicar com a API do Gemini'}`)
       }
     }
 

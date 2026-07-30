@@ -410,11 +410,11 @@ export default function Admin() {
                   <option value="" style={{ background: '#111' }}>— Selecione o modelo —</option>
                   {sysConfig.aiProvider === 'gemini' && (
                     <>
-                      <option value="gemini-2.0-flash" style={{ background: '#111' }}>✨ Gemini 2.0 Flash</option>
-                      <option value="gemini-2.0-flash-exp" style={{ background: '#111' }}>⚡ Gemini 2.0 Flash Exp (Gratuito)</option>
-                      <option value="gemini-1.5-pro" style={{ background: '#111' }}>💎 Gemini 1.5 Pro</option>
+                      <option value="gemini-2.0-flash" style={{ background: '#111' }}>✨ Gemini 2.0 Flash (Recomendado)</option>
                       <option value="gemini-1.5-flash" style={{ background: '#111' }}>🚀 Gemini 1.5 Flash</option>
-                      <option value="gemini-exp-1206" style={{ background: '#111' }}>🧪 Gemini Exp 1206</option>
+                      <option value="gemini-2.5-flash" style={{ background: '#111' }}>⚡ Gemini 2.5 Flash</option>
+                      <option value="gemini-1.5-pro" style={{ background: '#111' }}>💎 Gemini 1.5 Pro</option>
+                      <option value="gemini-1.5-flash-8b" style={{ background: '#111' }}>🔹 Gemini 1.5 Flash 8B</option>
                     </>
                   )}
                   {sysConfig.aiProvider === 'openai' && (
