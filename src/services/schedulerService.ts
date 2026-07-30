@@ -326,12 +326,14 @@ function getAuthHeaders(): Record<string, string> {
  * Sincroniza a fila local com os agendamentos salvos no banco via Backend API
  */
 export async function syncSchedulesWithBackend(): Promise<ScheduledPost[]> {
+  const localQueue = loadQueue()
+
   try {
     const res = await fetch('/api/schedules', { headers: getAuthHeaders() })
     if (res.ok) {
       const data = await res.json()
       if (Array.isArray(data)) {
-        const parsed: ScheduledPost[] = data.map((s: any) => {
+        const backendPosts: ScheduledPost[] = data.map((s: any) => {
           const dateObj = s.scheduledAt ? new Date(s.scheduledAt) : new Date()
           const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj
           return {
@@ -347,14 +349,33 @@ export async function syncSchedulesWithBackend(): Promise<ScheduledPost[]> {
           }
         })
 
-        saveQueue(parsed)
-        return parsed
+        // Identifica agendamentos locais que ainda não foram sincronizados com o backend
+        const backendIds = new Set(backendPosts.map((b) => b.id))
+        const unsyncedLocal = localQueue.filter((l) => !backendIds.has(l.id))
+
+        // Tenta enviar agendamentos locais pendentes para a API backend em segundo plano
+        for (const localPost of unsyncedLocal) {
+          if (localPost.status === 'pending') {
+            createBackendSchedule({
+              title: localPost.title,
+              copyText: localPost.copyText,
+              imageUrl: localPost.imageUrl,
+              affiliateLink: localPost.affiliateLink,
+              channels: localPost.channels,
+              scheduledAt: localPost.scheduledAt,
+            }).catch(() => {})
+          }
+        }
+
+        const merged = [...backendPosts, ...unsyncedLocal]
+        saveQueue(merged)
+        return merged
       }
     }
   } catch (e) {
     console.error('[Scheduler] Erro ao sincronizar agendamentos com o backend:', e)
   }
-  return loadQueue()
+  return localQueue
 }
 
 /**
