@@ -50,6 +50,113 @@ function LoadingFallback() {
   )
 }
 
+interface ErrorBoundaryState {
+  hasError: boolean
+  error?: Error
+}
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[ErrorBoundary] Uncaught Error:', error, errorInfo)
+  }
+
+  handleReset = () => {
+    try {
+      localStorage.removeItem('afiliax_queue')
+    } catch {}
+    window.location.reload()
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100vh',
+            width: '100vw',
+            background: 'var(--bg-main, #0f172a)',
+            color: 'var(--text-primary, #f8fafc)',
+            padding: 24,
+            textAlign: 'center',
+          }}
+        >
+          <div
+            style={{
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: 16,
+              padding: '32px 40px',
+              maxWidth: 480,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 16,
+            }}
+          >
+            <div style={{ fontSize: 40 }}>⚠️</div>
+            <h2 style={{ fontSize: 20, fontWeight: 700 }}>Ops! Algo deu errado ao carregar a página</h2>
+            <p style={{ fontSize: 13, color: 'var(--text-muted, #94a3b8)', lineHeight: 1.5 }}>
+              Ocorreu um erro inesperado de renderização. Clique abaixo para restaurar o sistema e recarregar.
+            </p>
+            <button
+              onClick={this.handleReset}
+              style={{
+                background: 'linear-gradient(135deg, #6366f1, #22d3ee)',
+                border: 'none',
+                color: '#fff',
+                fontWeight: 600,
+                padding: '12px 24px',
+                borderRadius: 10,
+                cursor: 'pointer',
+                fontSize: 14,
+                marginTop: 8,
+              }}
+            >
+              🔄 Recarregar Sistema
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    return this.props.children
+  }
+}
+
+function renderActivePage(tab: string) {
+  switch (tab) {
+    case 'dashboard':
+      return <Dashboard />
+    case 'new-post':
+      return <NewPost />
+    case 'scheduler':
+      return <Scheduler />
+    case 'groups':
+      return <Groups />
+    case 'history':
+      return <History />
+    case 'settings':
+      return <Settings />
+    case 'admin':
+      return <Admin />
+    default:
+      return <Dashboard />
+  }
+}
+
 function AppContent() {
   const { activeTab, authenticated, setAuthenticated } = useApp()
   const [authScreen, setAuthScreen] = useState<AuthScreen>('login')
@@ -71,16 +178,6 @@ function AppContent() {
     )
   }
 
-  const pages: Record<string, React.ReactNode> = {
-    dashboard: <Dashboard />,
-    'new-post': <NewPost />,
-    scheduler: <Scheduler />,
-    groups: <Groups />,
-    history: <History />,
-    settings: <Settings />,
-    admin: <Admin />,
-  }
-
   return (
     <div
       style={{
@@ -96,9 +193,11 @@ function AppContent() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Header />
         <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-          <Suspense fallback={<LoadingFallback />}>
-            {pages[activeTab] || <Dashboard />}
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<LoadingFallback />}>
+              {renderActivePage(activeTab)}
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
     </div>
@@ -107,8 +206,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </ErrorBoundary>
   )
 }

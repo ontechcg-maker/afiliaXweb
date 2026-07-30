@@ -141,19 +141,24 @@ export function suggestSchedule(
 /**
  * Formata uma data para exibição amigável
  */
-export function formatScheduleTime(date: Date): string {
-  const d = new Date(date)
-  const now = new Date()
-  const isToday = d.toDateString() === now.toDateString()
-  const tomorrow = new Date(now)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const isTomorrow = d.toDateString() === tomorrow.toDateString()
+export function formatScheduleTime(date: Date | string | number): string {
+  try {
+    const d = new Date(date)
+    if (isNaN(d.getTime())) return 'Data não definida'
+    const now = new Date()
+    const isToday = d.toDateString() === now.toDateString()
+    const tomorrow = new Date(now)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const isTomorrow = d.toDateString() === tomorrow.toDateString()
 
-  const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
-  if (isToday) return `Hoje às ${time}`
-  if (isTomorrow) return `Amanhã às ${time}`
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) + ` às ${time}`
+    if (isToday) return `Hoje às ${time}`
+    if (isTomorrow) return `Amanhã às ${time}`
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) + ` às ${time}`
+  } catch {
+    return 'Data não definida'
+  }
 }
 
 /**
@@ -283,9 +288,29 @@ export function loadQueue(): ScheduledPost[] {
     const raw = localStorage.getItem(QUEUE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as any[]
-      return parsed.map((p) => ({ ...p, scheduledAt: new Date(p.scheduledAt) }))
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((p) => p && typeof p === 'object')
+          .map((p) => {
+            const dateObj = p.scheduledAt ? new Date(p.scheduledAt) : new Date()
+            const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj
+            return {
+              id: String(p.id || Date.now()),
+              offerId: String(p.offerId || Date.now()),
+              title: String(p.title || 'Oferta'),
+              copyText: String(p.copyText || ''),
+              imageUrl: p.imageUrl ? String(p.imageUrl) : undefined,
+              affiliateLink: String(p.affiliateLink || ''),
+              channels: Array.isArray(p.channels) ? p.channels : [],
+              scheduledAt: validDate,
+              status: p.status || 'pending',
+            }
+          })
+      }
     }
-  } catch {}
+  } catch (e) {
+    console.error('[Scheduler] Erro ao ler localStorage:', e)
+  }
 
   return []
 }
@@ -306,10 +331,21 @@ export async function syncSchedulesWithBackend(): Promise<ScheduledPost[]> {
     if (res.ok) {
       const data = await res.json()
       if (Array.isArray(data)) {
-        const parsed: ScheduledPost[] = data.map((s: any) => ({
-          ...s,
-          scheduledAt: new Date(s.scheduledAt),
-        }))
+        const parsed: ScheduledPost[] = data.map((s: any) => {
+          const dateObj = s.scheduledAt ? new Date(s.scheduledAt) : new Date()
+          const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj
+          return {
+            id: String(s.id),
+            offerId: String(s.offerId || s.id),
+            title: String(s.title || 'Oferta Agendada'),
+            copyText: String(s.copyText || ''),
+            imageUrl: s.imageUrl ? String(s.imageUrl) : undefined,
+            affiliateLink: String(s.affiliateLink || ''),
+            channels: Array.isArray(s.channels) ? s.channels : [],
+            scheduledAt: validDate,
+            status: s.status || 'pending',
+          }
+        })
 
         saveQueue(parsed)
         return parsed
