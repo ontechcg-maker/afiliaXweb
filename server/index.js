@@ -1626,16 +1626,18 @@ async function keepAliveSupabase() {
   }
 }
 
-// Executa Keep-Alive do Supabase
+// Executa Keep-Alive do Supabase (A cada 172.800 segundos = 48 horas)
+const KEEP_ALIVE_INTERVAL_MS = 172_800 * 1000 // 172.800s (48h)
 keepAliveSupabase()
-setInterval(keepAliveSupabase, 3 * 24 * 60 * 60 * 1000)
+setInterval(keepAliveSupabase, KEEP_ALIVE_INTERVAL_MS)
+console.log('✅ [Supabase Keep-Alive] Ativo — Intervalo de 172.800s (48h).')
 
-// Inicia o Scheduler Worker 24/7
+// Inicia o Scheduler Worker 24/7 (Fila de Postagens)
 if (supabaseAdmin) {
   schedulerRunning = true
   runScheduler().catch(console.error)
   setInterval(() => runScheduler().catch(console.error), 30_000)
-  console.log('✅ [Scheduler] Worker multi-tenant ativo — 30s de ciclo.')
+  console.log('✅ [Scheduler] Worker multi-tenant ativo — 30s de ciclo de postagens.')
 } else {
   console.warn('[Scheduler] Desativado. Configure: SUPABASE_URL/SERVICE_ROLE_KEY')
 }
