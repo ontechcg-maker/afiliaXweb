@@ -1134,13 +1134,24 @@ router.get('/schedules', requireAuth, async (req, res) => {
   try {
     if (!supabaseAdmin) return res.json([])
 
-    const { data: schedules, error } = await supabaseAdmin
+    const { data: schedules, error: schedError } = await supabaseAdmin
       .from('schedules')
       .select('*, offers(*)')
-      .eq('user_id', req.user.id)
+      .or(`user_id.eq.${req.user.id},user_id.is.null`)
       .order('scheduled_at', { ascending: true })
 
-    if (error) throw error
+    if (schedError) console.error('[GET /schedules] Erro schedules:', schedError.message)
+
+    const scheduleOfferIds = new Set((schedules || []).map((s) => s.offer_id).filter(Boolean))
+
+    const { data: offersOnly, error: offersError } = await supabaseAdmin
+      .from('offers')
+      .select('*')
+      .or(`user_id.eq.${req.user.id},user_id.is.null`)
+      .in('status', ['scheduled', 'pending'])
+      .order('created_at', { ascending: true })
+
+    if (offersError) console.error('[GET /schedules] Erro offers:', offersError.message)
 
     const formatted = (schedules || []).map((s) => ({
       id: s.id,
@@ -1149,10 +1160,30 @@ router.get('/schedules', requireAuth, async (req, res) => {
       copyText: s.offers?.copy_text || '',
       imageUrl: s.offers?.image_url || undefined,
       affiliateLink: s.offers?.affiliate_link || s.offers?.url || '',
-      channels: Array.isArray(s.channels) ? s.channels : [],
+      channels: Array.isArray(s.channels) && s.channels.length > 0
+        ? s.channels
+        : [{ type: 'whatsapp', targetId: 'all', targetName: 'Todos os Grupos' }],
       scheduledAt: s.scheduled_at,
-      status: s.status,
+      status: s.status === 'scheduled' ? 'pending' : (s.status || 'pending'),
     }))
+
+    if (offersOnly && offersOnly.length > 0) {
+      for (const off of offersOnly) {
+        if (!scheduleOfferIds.has(off.id)) {
+          formatted.push({
+            id: off.id,
+            offerId: off.id,
+            title: off.title || 'Oferta Agendada',
+            copyText: off.copy_text || '',
+            imageUrl: off.image_url || undefined,
+            affiliateLink: off.affiliate_link || off.url || '',
+            channels: [{ type: 'whatsapp', targetId: 'all', targetName: 'Todos os Grupos' }],
+            scheduledAt: off.created_at || new Date().toISOString(),
+            status: 'pending',
+          })
+        }
+      }
+    }
 
     res.json(formatted)
   } catch (e) {
@@ -1266,22 +1297,22 @@ async function runScheduler() {
     console.warn('[Scheduler] Supabase Admin não configurado — scheduler pausado.')
     return 0
   }
-  if (!EVOLUTION_BASE_URL) {
-    const { baseUrl } = await getSystemConfig().catch(() => ({ baseUrl: '' }))
-    if (!baseUrl) {
-      console.warn('[Scheduler] Evolution API não configurada — scheduler pausado.')
-      return 0
-    }
+
+  const { baseUrl: sysBaseUrl } = await getSystemConfig().catch(() => ({ baseUrl: '' }))
+  const effectiveBaseUrl = EVOLUTION_BASE_URL || sysBaseUrl
+  if (!effectiveBaseUrl) {
+    console.warn('[Scheduler] Evolution API não configurada — scheduler pausado.')
+    return 0
   }
 
   const now = new Date().toISOString()
   console.log(`[Scheduler] Ciclo iniciado às ${new Date().toLocaleTimeString('pt-BR')} | Procurando agendamentos <= ${now}`)
 
-  // 1. Busca todos os agendamentos pendentes com suas respectivas ofertas E user_id
+  // 1. Busca todos os agendamentos pendentes ou agendados
   const { data: duePosts, error } = await supabaseAdmin
     .from('schedules')
     .select('*, offers(*)')
-    .eq('status', 'pending')
+    .in('status', ['pending', 'scheduled'])
     .lte('scheduled_at', now)
 
   if (error) {
@@ -1319,10 +1350,26 @@ async function runScheduler() {
 
       instanceName = userProfile?.instance_name
       instanceStatus = userProfile?.instance_status || 'disconnected'
+
+      // Se a instância estiver marcada como disconnected/connecting no banco, testa status ao vivo na Evolution API
+      if (instanceName && instanceStatus !== 'connected') {
+        try {
+          const stateData = await evolutionFetch(`/instance/connectionState/${instanceName}`)
+          const state = stateData?.instance?.state || stateData?.state
+          if (state === 'open' || state === 'CONNECTED') {
+            instanceStatus = 'connected'
+            await supabaseAdmin.from('profiles').update({ instance_status: 'connected' }).eq('id', schedule.user_id)
+            console.log(`[Scheduler]   → Instância ${instanceName} atualizada para CONNECTED via verificação ao vivo.`)
+          }
+        } catch (stateErr) {
+          console.warn(`[Scheduler]   → Erro ao checar status ao vivo da instância ${instanceName}:`, stateErr.message)
+        }
+      }
+
       console.log(`[Scheduler]   → Instância do usuário: ${instanceName || 'não encontrada'} (${instanceStatus})`)
     }
 
-    // Fallback: se não tiver user_id no agendamento, tenta usar a primeira instância conectada
+    // Fallback: se não tiver user_id no agendamento ou se estiver desconectado, tenta usar a primeira instância conectada no sistema
     if (!instanceName || instanceStatus !== 'connected') {
       const { data: fallbackProfile } = await supabaseAdmin
         .from('profiles')
@@ -1343,27 +1390,20 @@ async function runScheduler() {
       continue
     }
 
-    const channels = Array.isArray(schedule.channels) ? schedule.channels : []
+    let channels = Array.isArray(schedule.channels) ? schedule.channels : []
+    if (channels.length === 0) {
+      channels = [{ type: 'whatsapp', targetId: 'all', targetName: 'Todos os Grupos' }]
+    }
+
     let success = false
 
     for (const channel of channels) {
       if (channel.type !== 'whatsapp') continue
 
-      let targetIds = []
-      if (channel.targetId === 'all' || !channel.targetId) {
-        const groupData = await evolutionFetch(
-          `/group/fetchAllGroups/${instanceName}?getParticipants=false`
-        ).catch(() => null)
-        const list = Array.isArray(groupData) ? groupData
-          : groupData?.groups || groupData?.response || []
-        targetIds = list.map((g) => g.id || g.jid || '').filter((id) => id.includes('@g.us'))
-      } else {
-        targetIds = [channel.targetId]
-      }
+      const targetIds = await resolveTargetGroups(instanceName, channel.targetId).catch(() => [])
 
-      for (const rawTarget of targetIds) {
-        if (!rawTarget || rawTarget.startsWith('cms')) continue
-        const target = rawTarget.includes('@') ? rawTarget : `${rawTarget}@g.us`
+      for (const target of targetIds) {
+        if (!target || target.startsWith('cms')) continue
         try {
           if (offer.image_url && offer.image_url.trim().length > 0) {
             const isDataUri = offer.image_url.startsWith('data:')
@@ -1395,13 +1435,26 @@ async function runScheduler() {
       }
     }
 
+    const newStatus = success ? 'sent' : 'failed'
     await supabaseAdmin
       .from('schedules')
-      .update({ status: success ? 'sent' : 'failed', sent_at: new Date().toISOString() })
+      .update({ status: newStatus, sent_at: new Date().toISOString() })
       .eq('id', schedule.id)
 
+    if (schedule.offer_id) {
+      await supabaseAdmin
+        .from('offers')
+        .update({ status: newStatus })
+        .eq('id', schedule.offer_id)
+        .catch(() => {})
+    }
+
+    if (success && schedule.user_id) {
+      await incrementUserPostCount(schedule.user_id).catch(() => {})
+    }
+
     totalProcessed++
-    console.log(`[Scheduler] Post ${schedule.id} → ${success ? '✅ sent' : '❌ failed'}`)
+    console.log(`[Scheduler] Post ${schedule.id} → ${success ? '✅ enviado com sucesso' : '❌ falhou no envio'}`)
   }
 
   return totalProcessed
@@ -1451,17 +1504,14 @@ keepAliveSupabase()
 autoUpgradeVipUsers()
 setInterval(keepAliveSupabase, 3 * 24 * 60 * 60 * 1000)
 
-// Inicia o Scheduler
-if (supabaseAdmin && EVOLUTION_BASE_URL) {
+// Inicia o Scheduler Worker 24/7
+if (supabaseAdmin) {
   schedulerRunning = true
   runScheduler().catch(console.error)
   setInterval(() => runScheduler().catch(console.error), 30_000)
-  console.log('[Scheduler] Worker multi-tenant ativo — 30s de ciclo.')
+  console.log('✅ [Scheduler] Worker multi-tenant ativo — 30s de ciclo.')
 } else {
-  const missing = []
-  if (!supabaseAdmin) missing.push('SUPABASE_URL/SERVICE_ROLE_KEY')
-  if (!EVOLUTION_BASE_URL) missing.push('EVOLUTION_BASE_URL')
-  console.warn(`[Scheduler] Desativado. Configure: ${missing.join(', ')}`)
+  console.warn('[Scheduler] Desativado. Configure: SUPABASE_URL/SERVICE_ROLE_KEY')
 }
 
 // ─── Inicia Servidor ─────────────────────────────────────────────

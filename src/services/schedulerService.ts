@@ -1,5 +1,7 @@
 import type { EvolutionConfig } from './evolutionService'
 import { getGroups, sendMediaMessage, sendTextMessage } from './evolutionService'
+import { getAuthToken } from './authService'
+import { getSupabaseClient } from './supabaseClient'
 
 export interface ScheduledPost {
   id: string
@@ -315,27 +317,31 @@ export function loadQueue(): ScheduledPost[] {
   return []
 }
 
-function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem('afiliax_auth_token')
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = (await getAuthToken()) || localStorage.getItem('afiliax_auth_token')
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (token) headers['Authorization'] = `Bearer ${token}`
   return headers
 }
 
 /**
- * Sincroniza a fila local com os agendamentos salvos no banco via Backend API
+ * Sincroniza a fila local com os agendamentos salvos no banco via Backend API ou Supabase direto
  */
 export async function syncSchedulesWithBackend(): Promise<ScheduledPost[]> {
   const localQueue = loadQueue()
+  let backendPosts: ScheduledPost[] = []
 
+  // 1. Tenta buscar via Backend API Express
   try {
-    const res = await fetch('/api/schedules', { headers: getAuthHeaders() })
+    const headers = await getAuthHeaders()
+    const res = await fetch('/api/schedules', { headers })
     if (res.ok) {
       const data = await res.json()
       if (Array.isArray(data)) {
-        const backendPosts: ScheduledPost[] = data.map((s: any) => {
+        backendPosts = data.map((s: any) => {
           const dateObj = s.scheduledAt ? new Date(s.scheduledAt) : new Date()
           const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj
+          const rawStatus = (s.status || 'pending').toLowerCase()
           return {
             id: String(s.id),
             offerId: String(s.offerId || s.id),
@@ -343,43 +349,120 @@ export async function syncSchedulesWithBackend(): Promise<ScheduledPost[]> {
             copyText: String(s.copyText || ''),
             imageUrl: s.imageUrl ? String(s.imageUrl) : undefined,
             affiliateLink: String(s.affiliateLink || ''),
-            channels: Array.isArray(s.channels) ? s.channels : [],
+            channels: Array.isArray(s.channels) && s.channels.length > 0
+              ? s.channels
+              : [{ type: 'whatsapp', targetId: 'all', targetName: 'Todos os Grupos' }],
             scheduledAt: validDate,
-            status: s.status || 'pending',
+            status: rawStatus === 'scheduled' ? 'pending' : (rawStatus as any),
           }
         })
-
-        // Identifica agendamentos locais que ainda não foram sincronizados com o backend
-        const backendIds = new Set(backendPosts.map((b) => b.id))
-        const unsyncedLocal = localQueue.filter((l) => !backendIds.has(l.id))
-
-        // Tenta enviar agendamentos locais pendentes para a API backend em segundo plano
-        for (const localPost of unsyncedLocal) {
-          if (localPost.status === 'pending') {
-            createBackendSchedule({
-              title: localPost.title,
-              copyText: localPost.copyText,
-              imageUrl: localPost.imageUrl,
-              affiliateLink: localPost.affiliateLink,
-              channels: localPost.channels,
-              scheduledAt: localPost.scheduledAt,
-            }).catch(() => {})
-          }
-        }
-
-        const merged = [...backendPosts, ...unsyncedLocal]
-        saveQueue(merged)
-        return merged
       }
     }
   } catch (e) {
-    console.error('[Scheduler] Erro ao sincronizar agendamentos com o backend:', e)
+    console.error('[Scheduler] Erro ao sincronizar agendamentos com a API backend:', e)
   }
-  return localQueue
+
+  // 2. Fallback via cliente Supabase direto se a API backend não retornou dados
+  if (backendPosts.length === 0) {
+    const supabase = getSupabaseClient()
+    if (supabase) {
+      try {
+        const { data: schedData } = await supabase
+          .from('schedules')
+          .select('*, offers(*)')
+          .order('scheduled_at', { ascending: true })
+
+        if (Array.isArray(schedData) && schedData.length > 0) {
+          backendPosts = schedData.map((s: any) => {
+            const dateObj = s.scheduled_at ? new Date(s.scheduled_at) : new Date()
+            const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj
+            const rawStatus = (s.status || 'pending').toLowerCase()
+            return {
+              id: String(s.id),
+              offerId: String(s.offer_id || s.id),
+              title: String(s.offers?.title || 'Oferta Agendada'),
+              copyText: String(s.offers?.copy_text || ''),
+              imageUrl: s.offers?.image_url || undefined,
+              affiliateLink: String(s.offers?.affiliate_link || s.offers?.url || ''),
+              channels: Array.isArray(s.channels) && s.channels.length > 0
+                ? s.channels
+                : [{ type: 'whatsapp', targetId: 'all', targetName: 'Todos os Grupos' }],
+              scheduledAt: validDate,
+              status: rawStatus === 'scheduled' ? 'pending' : (rawStatus as any),
+            }
+          })
+        }
+
+        // Também busca ofertas da tabela `offers` com status 'scheduled' ou 'pending'
+        const { data: offersData } = await supabase
+          .from('offers')
+          .select('*')
+          .in('status', ['scheduled', 'pending'])
+          .order('created_at', { ascending: true })
+
+        if (Array.isArray(offersData) && offersData.length > 0) {
+          const existingOfferIds = new Set(backendPosts.map((b) => b.offerId))
+          for (const off of offersData) {
+            if (!existingOfferIds.has(String(off.id))) {
+              const dateObj = off.created_at ? new Date(off.created_at) : new Date()
+              const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj
+              backendPosts.push({
+                id: String(off.id),
+                offerId: String(off.id),
+                title: String(off.title || 'Oferta Agendada'),
+                copyText: String(off.copy_text || ''),
+                imageUrl: off.image_url || undefined,
+                affiliateLink: String(off.affiliate_link || off.url || ''),
+                channels: [{ type: 'whatsapp', targetId: 'all', targetName: 'Todos os Grupos' }],
+                scheduledAt: validDate,
+                status: 'pending',
+              })
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[Scheduler] Erro ao buscar via Supabase client:', e)
+      }
+    }
+  }
+
+  // 3. Mescla posts locais com os do backend/database (com desduplicação)
+  const postMap = new Map<string, ScheduledPost>()
+
+  for (const post of backendPosts) {
+    postMap.set(post.id, post)
+  }
+
+  for (const localPost of localQueue) {
+    if (!postMap.has(localPost.id)) {
+      const isDuplicate = Array.from(postMap.values()).some(
+        (b) =>
+          b.title === localPost.title &&
+          Math.abs(new Date(b.scheduledAt).getTime() - new Date(localPost.scheduledAt).getTime()) < 120_000
+      )
+      if (!isDuplicate) {
+        postMap.set(localPost.id, localPost)
+        if (localPost.status === 'pending') {
+          createBackendSchedule({
+            title: localPost.title,
+            copyText: localPost.copyText,
+            imageUrl: localPost.imageUrl,
+            affiliateLink: localPost.affiliateLink,
+            channels: localPost.channels,
+            scheduledAt: localPost.scheduledAt,
+          }).catch(() => {})
+        }
+      }
+    }
+  }
+
+  const merged = Array.from(postMap.values())
+  saveQueue(merged)
+  return merged
 }
 
 /**
- * Cria agendamento no banco de dados via Backend API
+ * Cria agendamento no banco de dados via Backend API ou Supabase direto
  */
 export async function createBackendSchedule(payload: {
   title: string
@@ -393,46 +476,108 @@ export async function createBackendSchedule(payload: {
   coupon?: string
   channels: ScheduleChannel[]
   scheduledAt: Date
-}): Promise<void> {
+}): Promise<{ scheduleId?: string; offerId?: string } | void> {
   try {
-    await fetch('/api/schedules/create', {
+    const headers = await getAuthHeaders()
+    const res = await fetch('/api/schedules/create', {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers,
       body: JSON.stringify({
         ...payload,
         scheduledAt: payload.scheduledAt.toISOString(),
       }),
     })
+    if (res.ok) {
+      const data = await res.json()
+      return { scheduleId: data.scheduleId, offerId: data.offerId }
+    }
   } catch (e) {
-    console.error('[Scheduler] Erro ao criar agendamento no backend:', e)
+    console.error('[Scheduler] Erro ao criar agendamento via API backend:', e)
+  }
+
+  // Fallback via cliente Supabase direto se a API backend falhar
+  const supabase = getSupabaseClient()
+  if (supabase) {
+    try {
+      const { data: offer } = await supabase
+        .from('offers')
+        .insert({
+          url: payload.url || payload.affiliateLink || '',
+          title: payload.title || 'Oferta de Afiliado',
+          price_from: payload.priceFrom || null,
+          price_to: payload.priceTo || null,
+          discount_pct: payload.discountPct || null,
+          coupon: payload.coupon || null,
+          image_url: payload.imageUrl || null,
+          affiliate_link: payload.affiliateLink || payload.url || '',
+          copy_text: payload.copyText || '',
+          status: 'scheduled',
+        })
+        .select('id')
+        .single()
+
+      if (offer) {
+        const { data: schedule } = await supabase
+          .from('schedules')
+          .insert({
+            offer_id: offer.id,
+            channels: payload.channels || [],
+            scheduled_at: payload.scheduledAt.toISOString(),
+            status: 'pending',
+          })
+          .select('id')
+          .single()
+
+        return { scheduleId: schedule?.id, offerId: offer.id }
+      }
+    } catch (e) {
+      console.error('[Scheduler] Erro ao criar via Supabase client:', e)
+    }
   }
 }
 
 /**
- * Exclui um agendamento do banco via Backend API
+ * Exclui um agendamento do banco via Backend API ou Supabase direto
  */
 export async function deleteBackendSchedule(id: string): Promise<void> {
   try {
+    const headers = await getAuthHeaders()
     await fetch(`/api/schedules/${id}/delete`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers,
     })
   } catch (e) {
     console.error('[Scheduler] Erro ao excluir agendamento no backend:', e)
   }
+
+  const supabase = getSupabaseClient()
+  if (supabase) {
+    try {
+      await supabase.from('schedules').delete().eq('id', id)
+      await supabase.from('offers').delete().eq('id', id)
+    } catch {}
+  }
 }
 
 /**
- * Atualiza o horário de disparo no banco via Backend API
+ * Atualiza o horário de disparo no banco via Backend API ou Supabase direto
  */
 export async function updateBackendScheduleTime(id: string, newDate: Date): Promise<void> {
   try {
+    const headers = await getAuthHeaders()
     await fetch(`/api/schedules/${id}/update-time`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers,
       body: JSON.stringify({ scheduledAt: newDate.toISOString() }),
     })
   } catch (e) {
     console.error('[Scheduler] Erro ao atualizar horário no backend:', e)
+  }
+
+  const supabase = getSupabaseClient()
+  if (supabase) {
+    try {
+      await supabase.from('schedules').update({ scheduled_at: newDate.toISOString(), status: 'pending' }).eq('id', id)
+    } catch {}
   }
 }

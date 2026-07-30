@@ -19,6 +19,21 @@ export default function Scheduler() {
   const [editDateTime, setEditDateTime] = useState<string>('')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false)
+
+  const handleSync = async () => {
+    setIsSyncing(true)
+    try {
+      const synced = await syncSchedulesWithBackend()
+      setQueue(synced)
+      setSuccessMsg('✨ Fila de agendamentos atualizada!')
+      setTimeout(() => setSuccessMsg(null), 2500)
+    } catch {
+      setErrorMsg('Falha ao sincronizar agendamentos.')
+    } finally {
+      setIsSyncing(false)
+    }
+  }
 
   // Sincronização e disparo no backend ao carregar a página e a cada 15s
   useEffect(() => {
@@ -51,7 +66,7 @@ export default function Scheduler() {
 
   const health = calculateHealthScore(settings.sendIntervalMinutes)
 
-  const pending = queue.filter((p) => p.status === 'pending')
+  const pending = queue.filter((p) => p.status === 'pending' || (p.status as string) === 'scheduled')
   const sent = queue.filter((p) => p.status === 'sent')
 
   const HealthIcon = health.score === 'excellent' || health.score === 'good'
@@ -246,6 +261,16 @@ export default function Scheduler() {
             Fila de Envios ({queue.length})
           </h3>
           <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn-ghost"
+              onClick={handleSync}
+              disabled={isSyncing}
+              style={{ padding: '7px 12px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+              title="Sincronizar Fila de Agendamentos"
+            >
+              <RefreshCw size={13} style={{ animation: isSyncing ? 'spin 1s linear infinite' : 'none' }} />
+              {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
+            </button>
             {sent.length > 0 && (
               <button
                 className="btn-ghost"

@@ -350,22 +350,10 @@ export default function NewPost() {
     const existingQueue = loadQueue()
     const nextScheduledTime = calculateNextScheduleTime(existingQueue, settings.sendIntervalMinutes)
 
-    const newOfferPost: ScheduledPost = {
-      id: String(Date.now()),
-      offerId: String(Date.now()),
-      title: offerTitle,
-      copyText: copy,
-      imageUrl: customImage,
-      affiliateLink: affiliateLink,
-      channels,
-      scheduledAt: nextScheduledTime,
-      status: 'pending',
-    }
+    const tempId = String(Date.now())
 
-    saveQueue([...existingQueue, newOfferPost])
-
-    // Salva a oferta e o agendamento no backend (garantindo persistência multi-tenant com user_id)
-    await createBackendSchedule({
+    // Salva a oferta e o agendamento no backend ou Supabase
+    const backendRes = await createBackendSchedule({
       title: offerTitle,
       copyText: copy,
       imageUrl: customImage,
@@ -378,6 +366,23 @@ export default function NewPost() {
       channels: channels,
       scheduledAt: nextScheduledTime,
     })
+
+    const finalId = backendRes?.scheduleId || tempId
+    const finalOfferId = backendRes?.offerId || tempId
+
+    const newOfferPost: ScheduledPost = {
+      id: finalId,
+      offerId: finalOfferId,
+      title: offerTitle,
+      copyText: copy,
+      imageUrl: customImage,
+      affiliateLink: affiliateLink,
+      channels,
+      scheduledAt: nextScheduledTime,
+      status: 'pending',
+    }
+
+    saveQueue([...existingQueue.filter((p) => p.id !== finalId), newOfferPost])
 
     setSuccessMsg('🚀 Oferta agendada e adicionada à fila com sucesso!')
     setTimeout(() => {
