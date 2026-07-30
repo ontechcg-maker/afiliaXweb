@@ -15,7 +15,7 @@ function detectPlatform(url: string): string {
   if (url.includes('mercadolivre') || url.includes('mercadolibre') || url.includes('mercl.io') || url.includes('meli.la')) return 'mercadolivre'
   if (url.includes('shopee') || url.includes('shope.ee')) return 'shopee'
   if (url.includes('amazon') || url.includes('amzn')) return 'amazon'
-  if (url.includes('magazineluiza') || url.includes('magalu') || url.includes('mglu')) return 'magalu'
+  if (url.includes('magazineluiza') || url.includes('magalu') || url.includes('mglu') || url.includes('onelink.me') || url.includes('magazinevoce') || url.includes('divulgador.magalu')) return 'magalu'
   if (url.includes('aliexpress') || url.includes('s.click.aliexpress')) return 'aliexpress'
   if (url.includes('casasbahia') || url.includes('ponto') || url.includes('extra')) return 'casasbahia'
   if (url.includes('americanas') || url.includes('submarino') || url.includes('shoptime')) return 'americanas'
@@ -24,7 +24,7 @@ function detectPlatform(url: string): string {
 }
 
 /**
- * Expande e desencurta URLs (meli.la, amzn.to, shope.ee, etc.)
+ * Expande e desencurta URLs (meli.la, amzn.to, shope.ee, magazineluiza.onelink.me, etc.)
  */
 export async function unshortenUrl(url: string): Promise<string> {
   if (
@@ -32,7 +32,7 @@ export async function unshortenUrl(url: string): Promise<string> {
     url.includes('shopee.com.br') ||
     url.includes('shope.ee') ||
     url.includes('amazon.com.br') ||
-    url.includes('magazineluiza.com.br') ||
+    url.includes('m.magazineluiza.com.br') ||
     url.includes('aliexpress.com/item')
   ) {
     return url
@@ -419,6 +419,67 @@ function parseProductFromHTML(html: string, _url: string, platform: string): Scr
     const mlPrices = parseMercadoLivrePrice(html)
     priceTo = mlPrices.priceTo
     priceFrom = mlPrices.priceFrom
+  }
+
+  if (platform === 'magalu') {
+    // 1. Tenta extrair via JSON-LD (@type === 'Product')
+    const jsonLdMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)
+    if (jsonLdMatches) {
+      for (const block of jsonLdMatches) {
+        const cleanContent = block.replace(/<script[^>]*>/i, '').replace(/<\/script>/i, '')
+        try {
+          const parsed = JSON.parse(cleanContent)
+          const items = Array.isArray(parsed) ? parsed : [parsed]
+          for (const item of items) {
+            if (item['@type'] === 'Product') {
+              if (item.name && (!title || title === 'Produto sem título')) {
+                title = item.name
+              }
+              if (item.image) {
+                const img = Array.isArray(item.image) ? item.image[0] : item.image
+                if (typeof img === 'string') imageUrl = img
+                else if (img?.url) imageUrl = img.url
+              }
+              const offers = Array.isArray(item.offers) ? item.offers[0] : item.offers
+              if (offers) {
+                if (offers.price) priceTo = parseFloat(String(offers.price))
+                if (offers.lowPrice) priceTo = parseFloat(String(offers.lowPrice))
+                if (offers.highPrice && parseFloat(String(offers.highPrice)) > (priceTo || 0)) {
+                  priceFrom = parseFloat(String(offers.highPrice))
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // 2. Tenta extração por data-testid (price-value / price-original)
+    if (!priceTo) {
+      const pValMatch = html.match(/data-testid=["']price-value["'][^>]*>([^<]+)</i)
+      if (pValMatch) {
+        const raw = pValMatch[1].replace(/[^\d.,]/g, '').replace('.', '').replace(',', '.')
+        const p = parseFloat(raw)
+        if (!isNaN(p) && p > 0) priceTo = p
+      }
+    }
+
+    if (!priceFrom) {
+      const pOrigMatch = html.match(/data-testid=["']price-original["'][^>]*>([^<]+)</i)
+      if (pOrigMatch) {
+        const raw = pOrigMatch[1].replace(/[^\d.,]/g, '').replace('.', '').replace(',', '.')
+        const p = parseFloat(raw)
+        if (!isNaN(p) && p > 0) priceFrom = p
+      }
+    }
+
+    // 3. Imagem meta og:image de alta resolução
+    if (!imageUrl) {
+      const ogImg = getMetaContent('og:image') || getMetaContent('twitter:image')
+      if (ogImg && !ogImg.includes('logo-white') && !ogImg.includes('favicon')) {
+        imageUrl = ogImg
+      }
+    }
   }
 
   if (platform === 'shopee') {

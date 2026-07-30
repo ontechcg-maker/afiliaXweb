@@ -112,13 +112,62 @@ export default function NewPost() {
     }
   }
 
+function buildAffiliateUrl(url: string, tag?: string, platform?: string): string {
+  if (!tag || !tag.trim()) return url
+  const cleanTag = tag.trim()
+
+  try {
+    const parsed = new URL(url)
+    const isMagalu = platform === 'magalu' || url.includes('magazineluiza') || url.includes('magalu') || url.includes('mglu') || url.includes('onelink') || url.includes('magazinevoce')
+    const isML = platform === 'mercadolivre' || url.includes('mercadolivre') || url.includes('meli.la')
+
+    if (isMagalu) {
+      if (/^\d+$/.test(cleanTag)) {
+        parsed.searchParams.set('promoter_id', cleanTag)
+        if (!parsed.searchParams.has('utm_source')) parsed.searchParams.set('utm_source', 'divulgador')
+        if (!parsed.searchParams.has('utm_medium')) parsed.searchParams.set('utm_medium', 'magalu')
+      } else {
+        if (url.includes('magazinevoce.com.br')) {
+          parsed.pathname = parsed.pathname.replace(/^\/magazine[^\/]+/, `/${cleanTag}`)
+        } else {
+          parsed.searchParams.set('partner_id', cleanTag)
+          parsed.searchParams.set('promoter_id', cleanTag)
+          parsed.searchParams.set('utm_source', 'divulgador')
+          parsed.searchParams.set('utm_medium', 'magalu')
+        }
+      }
+      return parsed.toString()
+    }
+
+    if (isML) {
+      parsed.searchParams.set('matt_tool', cleanTag)
+      return parsed.toString()
+    }
+
+    if (url.includes('amazon') || url.includes('amzn')) {
+      parsed.searchParams.set('tag', cleanTag)
+      return parsed.toString()
+    }
+
+    if (url.includes('shopee') || url.includes('shope.ee')) {
+      parsed.searchParams.set('smtt', cleanTag)
+      return parsed.toString()
+    }
+
+    parsed.searchParams.set('tag', cleanTag)
+    return parsed.toString()
+  } catch {
+    return url.includes('?') ? `${url}&tag=${encodeURIComponent(cleanTag)}` : `${url}?tag=${encodeURIComponent(cleanTag)}`
+  }
+}
+
   const handleGenerateCopy = async () => {
     if (!product) return
     setGeneratingCopy(true)
     setError(null)
     setSuccessMsg(null)
     try {
-      const finalLink = affiliateTag ? `${url}?tag=${affiliateTag}` : url
+      const finalLink = buildAffiliateUrl(url, affiliateTag, product?.platform)
       const productWithLink = {
         title: product.title,
         priceFrom: product.priceFrom,

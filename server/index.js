@@ -1072,34 +1072,61 @@ router.get('/unshorten', async (req, res) => {
   }
 })
 
-/** POST /fetch-html — Busca o HTML de uma URL server-side (sem CORS) */
+/** POST /fetch-html — Busca o HTML de uma URL server-side (sem CORS) com suporte a Magalu, Mercado Livre, Shopee, Amazon, etc. */
 router.post('/fetch-html', async (req, res) => {
   const { url } = req.body || {}
   if (!url) return res.status(400).json({ error: 'url é obrigatório.' })
 
   try {
     const isShopee = url.includes('shopee') || url.includes('shope.ee')
-    const userAgent = isShopee ? 'WhatsApp/2.23.23.84 i' : USER_AGENT
+    const isMagalu = url.includes('magazineluiza') || url.includes('magalu') || url.includes('mglu') || url.includes('onelink.me') || url.includes('magazinevoce') || url.includes('divulgador.magalu')
 
-    const resp = await fetch(url, {
+    let targetUrl = url
+    let userAgent = USER_AGENT
+
+    if (isShopee) {
+      userAgent = 'WhatsApp/2.23.23.84 i'
+    } else if (isMagalu) {
+      userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1'
+
+      // Se for link do OneLink ou encurtado Magalu, obtém o redirecionamento primeiro com redirect manual
+      try {
+        const redirectRes = await fetch(url, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: {
+            'User-Agent': userAgent,
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+          signal: AbortSignal.timeout(8000),
+        })
+        const loc = redirectRes.headers.get('location')
+        if (loc) targetUrl = loc
+      } catch {}
+
+      if (targetUrl.includes('www.magazineluiza.com.br')) {
+        targetUrl = targetUrl.replace('www.magazineluiza.com.br', 'm.magazineluiza.com.br')
+      }
+    }
+
+    const resp = await fetch(targetUrl, {
+      method: 'GET',
+      redirect: 'manual',
       headers: {
         'User-Agent': userAgent,
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
         'Cache-Control': 'no-cache',
       },
-      redirect: 'follow',
       signal: AbortSignal.timeout(15000),
     })
 
-    if (!resp.ok) {
+    if (!resp.ok && resp.status !== 301 && resp.status !== 302) {
       return res.json({ ok: false, html: '' })
     }
 
-    // Respeita limite de 5MB para não travar o servidor
     const buffer = await resp.arrayBuffer()
     const text = new TextDecoder('utf-8', { fatal: false }).decode(buffer.slice(0, 5 * 1024 * 1024))
-    res.json({ ok: true, html: text, finalUrl: resp.url })
+    res.json({ ok: true, html: text, finalUrl: targetUrl })
   } catch (e) {
     res.json({ ok: false, html: '', error: e.message })
   }
