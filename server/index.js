@@ -1108,12 +1108,6 @@ router.post('/whatsapp/send-media', requireAuth, checkPostLimit, async (req, res
   }
 })
 
-// ─── Registrar todas as rotas no Express com prefixo /api ────────
-// (compatível com o Traefik stripprefix=/api E com chamadas diretas /api/...)
-app.use('/api/api', router)
-app.use('/api', router)
-app.use('/', router)
-
 /** GET /schedules — Lista agendamentos do usuário logado */
 router.get('/schedules', requireAuth, async (req, res) => {
   try {
@@ -1236,6 +1230,12 @@ router.post('/schedules/trigger-due', requireAuth, async (_req, res) => {
     res.status(500).json({ error: e.message })
   }
 })
+
+// ─── Registrar todas as rotas no Express com prefixo /api ────────
+// (compatível com o Traefik stripprefix=/api E com chamadas diretas /api/...)
+app.use('/api/api', router)
+app.use('/api', router)
+app.use('/', router)
 
 // ─── Scheduler Multi-Tenant 24/7 ────────────────────────────────
 let schedulerRunning = false
