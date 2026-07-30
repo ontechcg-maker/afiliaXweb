@@ -1358,7 +1358,7 @@ async function runScheduler() {
           const state = stateData?.instance?.state || stateData?.state
           if (state === 'open' || state === 'CONNECTED') {
             instanceStatus = 'connected'
-            await supabaseAdmin.from('profiles').update({ instance_status: 'connected' }).eq('id', schedule.user_id).catch(() => {})
+            await supabaseAdmin.from('profiles').update({ instance_status: 'connected' }).eq('id', schedule.user_id)
             console.log(`[Scheduler]   → Instância ${instanceName} atualizada para CONNECTED via verificação ao vivo.`)
           }
         } catch (stateErr) {
@@ -1442,15 +1442,18 @@ async function runScheduler() {
       .eq('id', schedule.id)
 
     if (schedule.offer_id) {
-      await supabaseAdmin
-        .from('offers')
-        .update({ status: newStatus })
-        .eq('id', schedule.offer_id)
-        .catch(() => {})
+      try {
+        await supabaseAdmin
+          .from('offers')
+          .update({ status: newStatus })
+          .eq('id', schedule.offer_id)
+      } catch {}
     }
 
     if (success && schedule.user_id) {
-      await incrementUserPostCount(schedule.user_id).catch(() => {})
+      try {
+        await incrementUserPostCount(schedule.user_id)
+      } catch {}
     }
 
     totalProcessed++
