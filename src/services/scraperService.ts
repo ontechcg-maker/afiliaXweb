@@ -422,11 +422,22 @@ function parseProductFromHTML(html: string, _url: string, platform: string): Scr
   }
 
   if (platform === 'shopee') {
+    if (html.includes('error_page') || html.includes('Page Not Found') || html.includes('página não encontrada')) {
+      return {
+        title: 'Link da Shopee expirado ou inválido (verifique a URL)',
+        platform: 'shopee',
+      }
+    }
+
     const descContent = getMetaContent('description') || getMetaContent('og:description')
     if (descContent) {
-      const matchDescTitle = descContent.match(/^Compre\s+([^!\n\r]+?)\s+na\s+Shopee\s+Brasil/i)
+      const matchDescTitle = descContent.match(/^Compre\s+([^!\n\r]+?)\s+na\s+Shopee\s+Brasil/i) ||
+                             descContent.match(/^Compre\s+([^!\n\r]+)/i)
       if (matchDescTitle && matchDescTitle[1]) {
-        title = matchDescTitle[1].trim()
+        const candidate = matchDescTitle[1].replace(/\s*na\s*Shopee.*/i, '').trim()
+        if (candidate.length > 5) {
+          title = candidate
+        }
       }
     }
 
