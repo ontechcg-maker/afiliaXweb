@@ -630,10 +630,13 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
       if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
         return res.json({ copy: cleanCopyText(data.candidates[0].content.parts[0].text) })
       }
+      if (data.error?.message) {
+        throw new Error(`Erro no Google Gemini (${targetModel}): ${data.error.message}`)
+      }
     }
 
     // 3. Provedor OpenRouter (Suporta qualquer modelo: DeepSeek, Llama, Gemini, Claude, etc.)
-    const targetOpenRouterModel = aiModel || 'google/gemini-2.0-flash-exp:free'
+    const targetOpenRouterModel = aiModel && aiModel !== 'google/gemini-2.0-flash-exp:free' ? aiModel : 'meta-llama/llama-3.3-70b-instruct'
     const headers = {
       'Content-Type': 'application/json',
       'HTTP-Referer': 'https://app.ontechcg.cloud',

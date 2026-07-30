@@ -428,10 +428,9 @@ export default function Admin() {
                   )}
                   {sysConfig.aiProvider === 'openrouter' && (
                     <>
-                      <option value="google/gemini-2.0-flash-exp:free" style={{ background: '#111' }}>⚡ Gemini 2.0 Flash (Grátis)</option>
+                      <option value="meta-llama/llama-3.3-70b-instruct" style={{ background: '#111' }}>🦙 Llama 3.3 70B (Recomendado)</option>
                       <option value="deepseek/deepseek-chat" style={{ background: '#111' }}>🧠 DeepSeek V3</option>
                       <option value="deepseek/deepseek-r1" style={{ background: '#111' }}>💡 DeepSeek R1</option>
-                      <option value="meta-llama/llama-3.3-70b-instruct" style={{ background: '#111' }}>🦙 Llama 3.3 70B</option>
                       <option value="anthropic/claude-3.5-sonnet" style={{ background: '#111' }}>🎭 Claude 3.5 Sonnet</option>
                       <option value="openai/gpt-4o-mini" style={{ background: '#111' }}>🤖 GPT-4o Mini via OR</option>
                     </>
