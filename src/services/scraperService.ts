@@ -402,6 +402,42 @@ function parseMercadoLivrePrice(html: string): { priceTo?: number; priceFrom?: n
   return { priceTo, priceFrom }
 }
 
+function extractCouponFromHTML(html: string): string | undefined {
+  const couponPatterns = [
+    /cupom[:\s]+([A-Z0-9_-]{4,20})/i,
+    /c[oó]digo[:\s]+([A-Z0-9_-]{4,20})/i,
+    /use\s+o\s+cupom[:\s]+([A-Z0-9_-]{4,20})/i,
+    /cupom\s+de\s+desconto[:\s]+([A-Z0-9_-]{4,20})/i,
+  ]
+
+  // 1. Tenta encontrar em elementos HTML com atributos contendo coupon ou cupom
+  const elementMatches = html.matchAll(/<[^>]+(?:data-testid|class|id)=["'][^"']*(?:coupon|cupom)[^"']*["'][^>]*>([\s\S]*?)<\/[^>]+>/gi)
+  for (const match of elementMatches) {
+    const text = match[1].replace(/<[^>]+>/g, ' ').trim()
+    for (const pattern of couponPatterns) {
+      const found = text.match(pattern)
+      if (found && found[1] && found[1].length >= 4) {
+        return found[1].toUpperCase()
+      }
+    }
+  }
+
+  // 2. Fallback: Procura no texto limpo da página
+  const cleanText = html.replace(/<[^>]+>/g, ' ')
+  for (const pattern of couponPatterns) {
+    const found = cleanText.match(pattern)
+    if (found && found[1] && found[1].length >= 4) {
+      const code = found[1].toUpperCase()
+      const invalidWords = ['MAGALU', 'PRODUTO', 'FRETE', 'BRASIL', 'DESCONTO', 'OFERTA', 'CARRINHO']
+      if (!invalidWords.includes(code)) {
+        return code
+      }
+    }
+  }
+
+  return undefined
+}
+
 function parseProductFromHTML(html: string, _url: string, platform: string): ScrapedProduct {
   const getMetaContent = (name: string): string | undefined => {
     const match =
@@ -422,30 +458,45 @@ function parseProductFromHTML(html: string, _url: string, platform: string): Scr
   }
 
   if (platform === 'magalu') {
-    // 1. Tenta extrair via JSON-LD (@type === 'Product')
+    // 1. Tenta extrair via JSON-LD (@type === 'Product' ou com @graph)
     const jsonLdMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)
     if (jsonLdMatches) {
       for (const block of jsonLdMatches) {
         const cleanContent = block.replace(/<script[^>]*>/i, '').replace(/<\/script>/i, '')
         try {
           const parsed = JSON.parse(cleanContent)
-          const items = Array.isArray(parsed) ? parsed : [parsed]
-          for (const item of items) {
-            if (item['@type'] === 'Product') {
+          let candidates: any[] = []
+          if (Array.isArray(parsed)) candidates = parsed
+          else if (parsed && typeof parsed === 'object') {
+            if (Array.isArray(parsed['@graph'])) candidates = parsed['@graph']
+            else candidates = [parsed]
+          }
+
+          for (const item of candidates) {
+            if (!item || typeof item !== 'object') continue
+            const itemType = item['@type']
+            const isProduct = itemType === 'Product' || (Array.isArray(itemType) && itemType.includes('Product'))
+            if (isProduct) {
               if (item.name && (!title || title === 'Produto sem título')) {
-                title = item.name
+                title = String(item.name).trim()
               }
               if (item.image) {
                 const img = Array.isArray(item.image) ? item.image[0] : item.image
                 if (typeof img === 'string') imageUrl = img
                 else if (img?.url) imageUrl = img.url
+                else if (img?.contentUrl) imageUrl = img.contentUrl
               }
               const offers = Array.isArray(item.offers) ? item.offers[0] : item.offers
               if (offers) {
-                if (offers.price) priceTo = parseFloat(String(offers.price))
-                if (offers.lowPrice) priceTo = parseFloat(String(offers.lowPrice))
-                if (offers.highPrice && parseFloat(String(offers.highPrice)) > (priceTo || 0)) {
-                  priceFrom = parseFloat(String(offers.highPrice))
+                const pTo = offers.price ?? offers.lowPrice
+                const pFrom = offers.highPrice ?? item.highPrice
+                if (pTo !== undefined && pTo !== null) {
+                  const val = parseFloat(String(pTo).replace(/[^\d.,]/g, '').replace(',', '.'))
+                  if (!isNaN(val) && val > 0) priceTo = val
+                }
+                if (pFrom !== undefined && pFrom !== null) {
+                  const val = parseFloat(String(pFrom).replace(/[^\d.,]/g, '').replace(',', '.'))
+                  if (!isNaN(val) && val > 0) priceFrom = val
                 }
               }
             }
@@ -454,7 +505,19 @@ function parseProductFromHTML(html: string, _url: string, platform: string): Scr
       }
     }
 
-    // 2. Tenta extração por data-testid (price-value / price-original)
+    // 2. Tenta extração por seletores CSS / data-testid (heading-product-title, price-value, price-original)
+    if (!title || title === 'Produto sem título') {
+      const h1Match = html.match(/<h1[^>]*data-testid=["']heading-product-title["'][^>]*>([\s\S]*?)<\/h1>/i) ||
+                      html.match(/<h1[^>]*data-testid=["']product-title["'][^>]*>([\s\S]*?)<\/h1>/i) ||
+                      html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)
+      if (h1Match) {
+        const cleanH1 = h1Match[1].replace(/<[^>]+>/g, '').trim()
+        if (cleanH1 && cleanH1.length > 3) {
+          title = cleanH1
+        }
+      }
+    }
+
     if (!priceTo) {
       const pValMatch = html.match(/data-testid=["']price-value["'][^>]*>([^<]+)</i)
       if (pValMatch) {
@@ -473,7 +536,12 @@ function parseProductFromHTML(html: string, _url: string, platform: string): Scr
       }
     }
 
-    // 3. Imagem meta og:image de alta resolução
+    // 3. Imagem meta ou seletores de thumbnail
+    if (!imageUrl) {
+      const thumbMatch = html.match(/<img[^>]*data-testid=["']image-selected-thumbnail["'][^>]*src=["']([^"']+)["']/i) ||
+                         html.match(/<img[^>]*data-testid=["']product-image["'][^>]*src=["']([^"']+)["']/i)
+      if (thumbMatch) imageUrl = thumbMatch[1]
+    }
     if (!imageUrl) {
       const ogImg = getMetaContent('og:image') || getMetaContent('twitter:image')
       if (ogImg && !ogImg.includes('logo-white') && !ogImg.includes('favicon')) {
@@ -632,13 +700,16 @@ function parseProductFromHTML(html: string, _url: string, platform: string): Scr
 
   const discountMatch = html.match(/([0-9]{1,2})%\s*OFF/i)
   const discountPct = discountMatch ? parseInt(discountMatch[1]) : extractDiscount(priceFrom, priceTo)
+  const coupon = extractCouponFromHTML(html)
 
   return {
     title,
     priceFrom,
     priceTo,
     discountPct,
+    coupon,
     imageUrl,
     platform,
   }
 }
+
