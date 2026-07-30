@@ -536,44 +536,28 @@ function cleanCopyText(rawText) {
   if (!rawText) return ''
   let cleaned = String(rawText).trim()
 
-  // 1. Remove tags de pensamento <think>...</think> (DeepSeek R1 / Reasoning Models)
+  // 1. Remove qualquer bloco <think>...</think> (DeepSeek R1 / Reasoning Models)
   cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
 
-  // 2. Se a resposta contiver préambulo em inglês ("The user wants...", "Constraints:", "Challenge:"), limpa até o texto em português
-  if (/The user wants|Constraints:|Challenge:|Drafting process/i.test(cleaned)) {
-    const emojiMatch = cleaned.match(/(?:[🔥🚨👀⭐💥💰⚡😈😂✅👉🛒📦😍]|(?:\*[^*]+\*))/su)
-    if (emojiMatch && emojiMatch.index !== undefined && emojiMatch.index > 0) {
-      cleaned = cleaned.substring(emojiMatch.index).trim()
-    } else {
-      cleaned = cleaned
-        .replace(/^The user wants[\s\S]*?(?:Drafting strategy|Mental check|Copy:|MENSAGEM:)\s*/i, '')
-        .replace(/(?:Constraints|Challenge|Style|Product|Prices|Link):\s*.*$/gm, '')
-        .trim()
-    }
+  // 2. Se a resposta contiver préambulo de raciocínio antes da mensagem real da copy
+  const firstEmojiOrBold = cleaned.search(/(?:[🔥🚨👀⭐💥💰⚡😈😂✅👉🛒📦😍💨]|(?:\*[^*]+\*))/su)
+  if (firstEmojiOrBold > 0 && firstEmojiOrBold < 350) {
+    cleaned = cleaned.substring(firstEmojiOrBold).trim()
+  } else {
+    // Remove frases introdutórias comuns sem apagar linhas de produto/preço
+    cleaned = cleaned
+      .replace(/^(?:The user wants|Constraints:|Challenge:|Drafting process|Aqui está|Segue a copy|Copy gerada|Mensagem gerada)[\s\S]*?:\s*\n*/i, '')
+      .trim()
   }
 
-  // 3. Remove rótulos residuais de IA
+  // 3. Remove rótulos isolados no topo da mensagem
   cleaned = cleaned
-    .replace(/(?:Result|Scarcity\/Proof|Scarcity|Proof|Hook|Curiosity|Benefit|Offer|CTA):\s*/gi, '')
-    .replace(/^Subject:\s*/gi, '')
-    .replace(/^Title:\s*/gi, '')
+    .replace(/^(?:Subject|Title|Copy|MENSAGEM):\s*/gi, '')
     .trim()
 
-  // 4. Se ainda tiver sujeira no início antes do primeiro emoji de WhatsApp
-  const emojiIndex = cleaned.search(/(?:👀|🔥|⭐|💥|🚨|💰|⚡|😈|😂|✅|👉|🛒|📦|😍)/)
-  if (emojiIndex > 0 && emojiIndex < 200) {
-    cleaned = cleaned.substring(emojiIndex).trim()
-  }
-
-  // 5. Remove rodapés de checagem
-  const endCheckIndex = cleaned.search(/(?:Word count check|Mental Check|Drafting check|Portuguese words)/i)
-  if (endCheckIndex !== -1) {
-    cleaned = cleaned.substring(0, endCheckIndex).trim()
-  }
-
-  // 6. Cabeçalhos genéricos
+  // 4. Remove rodapés de checagem interna da IA se houver
   cleaned = cleaned
-    .replace(/^(Aqui está|Segue a copy|Copy gerada|Mensagem gerada)[\s\S]*?:\n*/i, '')
+    .replace(/\n+(?:Word count check|Mental Check|Drafting check|Portuguese words)[\s\S]*$/i, '')
     .trim()
 
   return cleaned
@@ -599,7 +583,7 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
         body: JSON.stringify({
           model: targetModel,
           messages: [{ role: 'user', content: prompt }],
-          max_tokens: 500,
+          max_tokens: 2000,
           temperature: 0.7,
         }),
       })
@@ -640,7 +624,7 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   contents: [{ parts: [{ text: prompt }] }],
-                  generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
+                  generationConfig: { temperature: 0.7, maxOutputTokens: 2000 },
                 }),
               }
             )
@@ -680,7 +664,7 @@ router.post('/generate-copy', requireAuth, async (req, res) => {
       body: JSON.stringify({
         model: targetOpenRouterModel,
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 500,
+        max_tokens: 2000,
         temperature: 0.7,
       }),
     })

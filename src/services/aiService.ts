@@ -101,72 +101,61 @@ export function formatCustomTemplate(template: string, product: ProductData): st
 
 function buildPrompt(product: ProductData, tone: CopyTone | string): string {
   const toneInstructions = TONE_PROMPTS[tone as CopyTone] || tone
-  return `ATENÇÃO E REGRA ABSOLUTA: Responda DIRETA E EXCLUSIVAMENTE com a mensagem pronta de divulgação para o WhatsApp em português do Brasil.
-PROIBIDO incluir raciocínio, explicações ("The user wants...", "Constraints:", "Challenge:"), tags de pensamento (<think>), rascunhos ou rótulos em inglês.
+  const priceFromFormatted = product.priceFrom && product.priceFrom > 0 ? `R$ ${product.priceFrom.toFixed(2).replace('.', ',')}` : 'Não informado'
+  const priceToFormatted = product.priceTo && product.priceTo > 0 ? `R$ ${product.priceTo.toFixed(2).replace('.', ',')}` : 'Não informado'
+  const discountFormatted = product.discountPct ? `${product.discountPct}% OFF` : 'Desconto especial'
+  const couponText = product.coupon ? `\n- Cupom: ${product.coupon}` : ''
+
+  return `ATENÇÃO E REGRA ABSOLUTA: Responda DIRETA E EXCLUSIVAMENTE com a mensagem completa e pronta de divulgação para o WhatsApp em português do Brasil.
+PROIBIDO incluir raciocínio, explicações ou notas em inglês antes ou depois do texto.
 
 Diretrizes da Mensagem:
-- Tamanho: 40 a 80 palavras (escaneável em 10 segundos).
 - Venda o Resultado e a Transformação prática do produto.
 - Formatação WhatsApp: Use *negrito* em preços promocionais e nomes, ~riscado~ em preços antigos.
-- CTA no final: Termine exatamente com a chamada de ação e o link na última linha.
+- CTA no final: Termine obrigatoriamente com a chamada de ação e o link na última linha.
 
 Abordagem Desejada / Instruções do Modelo:
 ${toneInstructions}
 
 Dados do Produto:
 - Nome do Produto: ${product.title}
-- Preço DE (Original): ${product.priceFrom && product.priceFrom > 0 ? `R$ ${product.priceFrom.toFixed(2).replace('.', ',')}` : 'Não informado'}
-- Preço POR (Promocional): ${product.priceTo && product.priceTo > 0 ? `R$ ${product.priceTo.toFixed(2).replace('.', ',')}` : 'Não informado'}
-- Desconto: ${product.discountPct ? `${product.discountPct}% OFF` : 'Desconto especial'}
+- Preço DE (Original): ${priceFromFormatted}
+- Preço POR (Promocional): ${priceToFormatted}
+- Desconto: ${discountFormatted}${couponText}
 - Link de Afiliado: ${product.affiliateLink}
 
-MENSAGEM FINAL PRONTA PARA O WHATSAPP:`
+MENSAGEM FINAL COMPLETA PRONTA PARA O WHATSAPP:`
 }
 
 /**
- * Remove qualquer palavra, raciocínio interno ou rótulo de IA (The user wants..., <think>, Result:, etc.)
+ * Remove qualquer palavra, raciocínio interno ou rótulo de IA sem cortar o conteúdo real da copy.
  */
 export function cleanCopyOutput(rawText: string): string {
+  if (!rawText) return ''
   let cleaned = rawText.trim()
 
   // 1. Remove qualquer bloco <think>...</think> (DeepSeek R1 / Reasoning Models)
   cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
 
-  // 2. Se contiver preâmbulo de raciocínio da IA em inglês ("The user wants...", "Constraints:", "Challenge:")
-  if (/The user wants|Constraints:|Challenge:|Drafting process/i.test(cleaned)) {
-    const emojiMatch = cleaned.match(/(?:[🔥🚨👀⭐💥💰⚡😈😂✅👉🛒📦😍]|(?:\*[^*]+\*))/su)
-    if (emojiMatch && emojiMatch.index !== undefined && emojiMatch.index > 0) {
-      cleaned = cleaned.substring(emojiMatch.index).trim()
-    } else {
-      cleaned = cleaned
-        .replace(/^The user wants[\s\S]*?(?:Drafting strategy|Mental check|Copy:|MENSAGEM:)\s*/i, '')
-        .replace(/(?:Constraints|Challenge|Style|Product|Prices|Link):\s*.*$/gm, '')
-        .trim()
-    }
+  // 2. Se a resposta contiver préambulo de raciocínio antes da mensagem real da copy
+  const firstEmojiOrBold = cleaned.search(/(?:[🔥🚨👀⭐💥💰⚡😈😂✅👉🛒📦😍💨]|(?:\*[^*]+\*))/su)
+  if (firstEmojiOrBold > 0 && firstEmojiOrBold < 350) {
+    cleaned = cleaned.substring(firstEmojiOrBold).trim()
+  } else {
+    // Remove frases introdutórias comuns sem apagar linhas de produto/preço
+    cleaned = cleaned
+      .replace(/^(?:The user wants|Constraints:|Challenge:|Drafting process|Aqui está|Segue a copy|Copy gerada|Mensagem gerada)[\s\S]*?:\s*\n*/i, '')
+      .trim()
   }
 
-  // 3. Remove rótulos em inglês no corpo da mensagem
+  // 3. Remove rótulos isolados no topo da mensagem
   cleaned = cleaned
-    .replace(/(?:Result|Scarcity\/Proof|Scarcity|Proof|Hook|Curiosity|Benefit|Offer|CTA):\s*/gi, '')
-    .replace(/^Subject:\s*/gi, '')
-    .replace(/^Title:\s*/gi, '')
+    .replace(/^(?:Subject|Title|Copy|MENSAGEM):\s*/gi, '')
     .trim()
 
-  // 4. Localiza a primeira ocorrência de emoji se ainda houver texto sujo antes
-  const emojiIndex = cleaned.search(/(?:👀|🔥|⭐|💥|🚨|💰|⚡|😈|😂|✅|👉|🛒|📦|😍)/)
-  if (emojiIndex > 0 && emojiIndex < 200) {
-    cleaned = cleaned.substring(emojiIndex).trim()
-  }
-
-  // 5. Remove seções finais de "Word count check" ou "Mental check"
-  const endCheckIndex = cleaned.search(/(?:Word count check|Mental Check|Drafting check|Portuguese words)/i)
-  if (endCheckIndex !== -1) {
-    cleaned = cleaned.substring(0, endCheckIndex).trim()
-  }
-
-  // 6. Limpeza final de cabeçalhos genéricos
+  // 4. Remove rodapés de checagem interna da IA se houver
   cleaned = cleaned
-    .replace(/^(Aqui está|Segue a copy|Copy gerada|Mensagem gerada)[\s\S]*?:\n*/i, '')
+    .replace(/\n+(?:Word count check|Mental Check|Drafting check|Portuguese words)[\s\S]*$/i, '')
     .trim()
 
   return cleaned
@@ -264,7 +253,7 @@ async function generateWithGemini(prompt: string, config: AIConfig): Promise<str
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
+              generationConfig: { temperature: 0.7, maxOutputTokens: 2000 },
             }),
           }
         )
@@ -297,7 +286,7 @@ async function generateWithOpenAI(prompt: string, config: AIConfig): Promise<str
     body: JSON.stringify({
       model,
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 500,
+      max_tokens: 2000,
       temperature: 0.7,
     }),
   })
@@ -319,7 +308,7 @@ async function generateWithOpenRouter(prompt: string, config: AIConfig): Promise
     body: JSON.stringify({
       model,
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 500,
+      max_tokens: 2000,
       temperature: 0.7,
     }),
   })
