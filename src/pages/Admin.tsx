@@ -96,11 +96,26 @@ export default function Admin() {
     setLoading(true)
     setErrorMsg(null)
     try {
-      const [statsData, usersData, configData] = await Promise.all([
-        getAdminStats().catch(() => null),
-        getAdminUsers().catch(() => []),
-        getAdminSystemConfig().catch(() => ({ evolutionBaseUrl: '', evolutionApiKey: '', openrouterApiKey: '', geminiApiKey: '', openaiApiKey: '', aiProvider: 'gemini', aiModel: 'gemini-2.0-flash', customModel: '' })),
-      ])
+      const statsData = await getAdminStats().catch(() => null)
+      const configData = await getAdminSystemConfig().catch(() => ({
+        evolutionBaseUrl: '',
+        evolutionApiKey: '',
+        openrouterApiKey: '',
+        geminiApiKey: '',
+        openaiApiKey: '',
+        aiProvider: 'gemini',
+        aiModel: 'gemini-2.0-flash',
+        customModel: '',
+      }))
+
+      let usersData: AdminUser[] = []
+      try {
+        usersData = await getAdminUsers()
+      } catch (userErr: any) {
+        console.error('[Admin] Erro ao carregar usuários:', userErr)
+        setErrorMsg(`Aviso na busca de clientes: ${userErr.message || 'Erro de permissão ou conexão'}`)
+      }
+
       setStats(statsData)
       setUsersList(usersData)
       setSysConfig(configData)

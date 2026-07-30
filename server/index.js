@@ -116,10 +116,12 @@ async function checkPostLimit(req, res, next) {
 
 // ─── Middleware Admin ───────────────────────────────────────────
 async function requireAdmin(req, res, next) {
-  if (!supabaseAdmin) return res.status(503).json({ error: 'Supabase não configurado.' })
+  if (!supabaseAdmin) return res.status(503).json({ error: 'Supabase não configurado no servidor.' })
+
+  const userEmail = (req.user?.email || '').toLowerCase()
 
   // E-mail do dono do SaaS tem permissão de admin garantida
-  if (req.user?.email === 'hevertonsalvador.cg@gmail.com') {
+  if (userEmail === 'hevertonsalvador.cg@gmail.com') {
     try {
       await supabaseAdmin.from('profiles').update({ role: 'admin' }).eq('id', req.user.id)
     } catch {}
@@ -349,15 +351,20 @@ router.get('/admin/stats', requireAuth, requireAdmin, async (_req, res) => {
 /** GET /admin/users — Lista todos os clientes cadastrados no Supabase Auth + Profiles */
 router.get('/admin/users', requireAuth, requireAdmin, async (_req, res) => {
   try {
-    if (!supabaseAdmin) return res.json([])
+    if (!supabaseAdmin) {
+      return res.status(503).json({ error: 'Supabase Admin não disponível no servidor.' })
+    }
 
     // 1. Busca todos os usuários cadastrados na Autenticação (auth.users)
-    const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }).catch((e) => {
+    let authUsers = []
+    try {
+      const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 })
+      if (!authErr && authData?.users) {
+        authUsers = authData.users
+      }
+    } catch (e) {
       console.error('[Admin Users] Erro ao listar auth.users:', e.message)
-      return { data: { users: [] } }
-    })
-    if (authErr) console.error('[Admin Users] authErr:', authErr.message)
-    const authUsers = authData?.users || []
+    }
 
     // 2. Busca todos os perfis na tabela public.profiles
     const { data: profiles } = await supabaseAdmin
@@ -378,7 +385,7 @@ router.get('/admin/users', requireAuth, requireAdmin, async (_req, res) => {
           email: authUser.email || '',
           instance_name: instanceName,
           instance_status: 'disconnected',
-          role: authUser.email === 'hevertonsalvador.cg@gmail.com' ? 'admin' : 'user',
+          role: authUser.email?.toLowerCase() === 'hevertonsalvador.cg@gmail.com' ? 'admin' : 'user',
           plan_tier: 'free',
           daily_posts_limit: 5,
           is_blocked: false,
@@ -403,7 +410,7 @@ router.get('/admin/users', requireAuth, requireAdmin, async (_req, res) => {
         instance_name: profile?.instance_name || `usr_${authUser.id.replace(/-/g, '')}`,
         instance_status: profile?.instance_status || 'disconnected',
         whatsapp_number: profile?.whatsapp_number || '',
-        role: profile?.role || (authUser.email === 'hevertonsalvador.cg@gmail.com' ? 'admin' : 'user'),
+        role: profile?.role || (authUser.email?.toLowerCase() === 'hevertonsalvador.cg@gmail.com' ? 'admin' : 'user'),
         plan_tier: profile?.plan_tier || 'free',
         daily_posts_limit: profile?.daily_posts_limit || 5,
         is_blocked: profile?.is_blocked || false,
@@ -411,10 +418,21 @@ router.get('/admin/users', requireAuth, requireAdmin, async (_req, res) => {
       })
     }
 
-    // Inclui também qualquer usuário em public.profiles que possa ter sido criado separadamente
+    // 4. Inclui também qualquer perfil de public.profiles que não estava na lista auth.users
     for (const p of (profiles || [])) {
       if (!combinedUsers.some((u) => u.id === p.id)) {
-        combinedUsers.push(p)
+        combinedUsers.push({
+          id: p.id,
+          email: p.email || 'Sem e-mail',
+          instance_name: p.instance_name || `usr_${p.id.replace(/-/g, '')}`,
+          instance_status: p.instance_status || 'disconnected',
+          whatsapp_number: p.whatsapp_number || '',
+          role: p.role || 'user',
+          plan_tier: p.plan_tier || 'free',
+          daily_posts_limit: p.daily_posts_limit || 5,
+          is_blocked: p.is_blocked || false,
+          created_at: p.created_at || new Date().toISOString(),
+        })
       }
     }
 
@@ -423,6 +441,7 @@ router.get('/admin/users', requireAuth, requireAdmin, async (_req, res) => {
 
     res.json(combinedUsers)
   } catch (e) {
+    console.error('[Admin Users] Erro:', e.message)
     res.status(500).json({ error: e.message })
   }
 })
