@@ -512,19 +512,46 @@ router.get('/unshorten', requireAuth, async (req, res) => {
 router.post('/fetch-html', requireAuth, async (req, res) => {
   const { url } = req.body || {}
   if (!url) return res.status(400).json({ error: 'Campo url é obrigatório.' })
+
+  const fetchTargetUrl = async (targetUrl) => {
+    try {
+      const response = await fetch(String(targetUrl), {
+        method: 'GET', redirect: 'follow',
+        headers: {
+          'User-Agent': USER_AGENT,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
+        },
+        signal: AbortSignal.timeout(12000),
+      })
+      const html = response.ok ? await response.text() : ''
+      return { ok: response.ok, status: response.status, url: response.url || targetUrl, html }
+    } catch {
+      return { ok: false, status: 0, url: targetUrl, html: '' }
+    }
+  }
+
   try {
-    const response = await fetch(String(url), {
-      method: 'GET', redirect: 'follow',
-      headers: {
-        'User-Agent': USER_AGENT,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
-      },
-      signal: AbortSignal.timeout(12000),
-    })
-    if (response.ok) {
-      const html = await response.text()
-      return res.json({ ok: true, url: response.url, html })
+    let result = await fetchTargetUrl(url)
+
+    // Se for Magalu e foi bloqueado pelo Akamai (403 ou página de erro "não é possível acessar")
+    const isMagalu = String(url).includes('magazineluiza') || String(url).includes('magalu') || String(url).includes('mglu') || String(url).includes('onelink') || String(url).includes('magazinevoce')
+    const isBlocked = !result.ok || result.status === 403 || result.html.includes('Não é possível acessar') || result.html.includes('akamai-bot') || result.html.length < 2000
+
+    if (isMagalu && isBlocked) {
+      const pIdMatch = String(result.url || url).match(/\/p\/([a-z0-9]+)/i)
+      if (pIdMatch && pIdMatch[1]) {
+        const productId = pIdMatch[1]
+        const fallbackUrl = `https://www.magazinevoce.com.br/magazinevoce/p/${productId}/`
+        const fallbackResult = await fetchTargetUrl(fallbackUrl)
+        if (fallbackResult.ok && fallbackResult.html.length > 2000) {
+          return res.json({ ok: true, url: fallbackResult.url, html: fallbackResult.html })
+        }
+      }
+    }
+
+    if (result.ok) {
+      return res.json({ ok: true, url: result.url, html: result.html })
     }
     res.json({ ok: false, url, html: '' })
   } catch {

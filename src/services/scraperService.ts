@@ -505,9 +505,10 @@ function parseProductFromHTML(html: string, _url: string, platform: string): Scr
       }
     }
 
-    // 2. Tenta extração por seletores CSS / data-testid (heading-product-title, price-value, price-original)
+    // 2. Tenta extração por seletores CSS / data-testid (heading-product-title, mod-headingproduct, price-value, price-original)
     if (!title || title === 'Produto sem título') {
       const h1Match = html.match(/<h1[^>]*data-testid=["']heading-product-title["'][^>]*>([\s\S]*?)<\/h1>/i) ||
+                      html.match(/<h1[^>]*data-testid=["']mod-headingproduct["'][^>]*>([\s\S]*?)<\/h1>/i) ||
                       html.match(/<h1[^>]*data-testid=["']product-title["'][^>]*>([\s\S]*?)<\/h1>/i) ||
                       html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)
       if (h1Match) {
@@ -528,7 +529,8 @@ function parseProductFromHTML(html: string, _url: string, platform: string): Scr
     }
 
     if (!priceFrom) {
-      const pOrigMatch = html.match(/data-testid=["']price-original["'][^>]*>([^<]+)</i)
+      const pOrigMatch = html.match(/data-testid=["']price-original["'][^>]*>([^<]+)</i) ||
+                          html.match(/data-testid=["']mod-productprice["'][^>]*>([^<]+)</i)
       if (pOrigMatch) {
         const raw = pOrigMatch[1].replace(/[^\d.,]/g, '').replace('.', '').replace(',', '.')
         const p = parseFloat(raw)
