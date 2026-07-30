@@ -1348,17 +1348,17 @@ async function runScheduler() {
         .eq('id', schedule.user_id)
         .maybeSingle()
 
-      instanceName = userProfile?.instance_name
+      instanceName = userProfile?.instance_name || `usr_${String(schedule.user_id).replace(/-/g, '')}`
       instanceStatus = userProfile?.instance_status || 'disconnected'
 
-      // Se a instância estiver marcada como disconnected/connecting no banco, testa status ao vivo na Evolution API
+      // Testa status ao vivo na Evolution API se não constar como 'connected'
       if (instanceName && instanceStatus !== 'connected') {
         try {
           const stateData = await evolutionFetch(`/instance/connectionState/${instanceName}`)
           const state = stateData?.instance?.state || stateData?.state
           if (state === 'open' || state === 'CONNECTED') {
             instanceStatus = 'connected'
-            await supabaseAdmin.from('profiles').update({ instance_status: 'connected' }).eq('id', schedule.user_id)
+            await supabaseAdmin.from('profiles').update({ instance_status: 'connected' }).eq('id', schedule.user_id).catch(() => {})
             console.log(`[Scheduler]   → Instância ${instanceName} atualizada para CONNECTED via verificação ao vivo.`)
           }
         } catch (stateErr) {
@@ -1366,7 +1366,7 @@ async function runScheduler() {
         }
       }
 
-      console.log(`[Scheduler]   → Instância do usuário: ${instanceName || 'não encontrada'} (${instanceStatus})`)
+      console.log(`[Scheduler]   → Instância do usuário: ${instanceName} (${instanceStatus})`)
     }
 
     // Fallback: se não tiver user_id no agendamento ou se estiver desconectado, tenta usar a primeira instância conectada no sistema
