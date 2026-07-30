@@ -27,7 +27,8 @@ function detectPlatform(url: string): string {
 export async function unshortenUrl(url: string): Promise<string> {
   if (
     url.includes('mercadolivre.com.br') ||
-    (url.includes('shopee.com.br') && !url.includes('s.shopee.com.br')) ||
+    url.includes('shopee.com.br') ||
+    url.includes('shope.ee') ||
     url.includes('amazon.com.br') ||
     url.includes('magazineluiza.com.br') ||
     url.includes('aliexpress.com/item')
@@ -69,6 +70,8 @@ function extractDiscount(priceFrom: number | undefined, priceTo: number | undefi
 }
 
 function extractTitleFromUrlSlug(url: string): string | undefined {
+  if (url.includes('shopee') || url.includes('shope.ee')) return undefined
+
   try {
     const parsed = new URL(url)
     const pathname = parsed.pathname
