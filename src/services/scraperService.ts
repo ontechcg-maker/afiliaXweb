@@ -736,13 +736,9 @@ function parseProductFromHTML(html: string, _url: string, platform: string): Scr
     priceFrom = undefined
   }
 
-  if (priceFrom && priceTo && priceFrom <= priceTo) {
-    priceFrom = undefined
-  }
-
   const discountMatch = html.match(/([0-9]{1,2})%\s*OFF/i)
   const discountPct = discountMatch ? parseInt(discountMatch[1]) : extractDiscount(priceFrom, priceTo)
-  const coupon = extractCouponFromHTML(html)
+  const coupon = platform === 'mercadolivre' ? undefined : extractCouponFromHTML(html)
 
   return {
     title,
