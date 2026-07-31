@@ -1061,41 +1061,169 @@ router.get('/analytics/summary', requireAuth, async (req, res) => {
 
 // ─── Rotas de Scraping Server-Side (sem bloqueios de CORS) ──────
 
-/** GET /unshorten?url=... — Expande links curtos (meli.la, amzn.to, etc.) server-side */
+/** GET /unshorten?url=... — Expande links curtos (meli.la, amzn.to, /sec/, etc.) server-side */
 router.get('/unshorten', async (req, res) => {
   const rawUrl = String(req.query.url || '')
   if (!rawUrl) return res.status(400).json({ error: 'url é obrigatório.' })
 
   try {
-    // Resolve redirecionamentos HTTP encadeados com seguimento de Location headers
-    let currentUrl = rawUrl
-    let maxRedirects = 10
-    while (maxRedirects-- > 0) {
-      const resp = await fetch(currentUrl, {
-        method: 'HEAD',
-        redirect: 'manual',
-        headers: {
-          'User-Agent': USER_AGENT,
-          Accept: 'text/html,*/*',
-        },
-        signal: AbortSignal.timeout(10000),
-      }).catch(() => null)
+    const resp = await fetch(rawUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      signal: AbortSignal.timeout(12000),
+    }).catch(() => null)
 
-      if (!resp) break
-
-      // Segue os redirecionamentos 3xx
-      if (resp.status >= 300 && resp.status < 400) {
-        const loc = resp.headers.get('location')
-        if (!loc || loc === currentUrl) break
-        currentUrl = loc.startsWith('http') ? loc : new URL(loc, currentUrl).href
-      } else {
-        // Chegou na URL final
-        break
-      }
-    }
-    res.json({ finalUrl: currentUrl })
+    const finalUrl = resp?.url || rawUrl
+    res.json({ finalUrl })
   } catch (e) {
     res.json({ finalUrl: rawUrl })
+  }
+})
+
+/** POST /scrape/mercadolivre — Extração de produtos Mercado Livre via API pública oficial e resolução de links de afiliado */
+router.post('/scrape/mercadolivre', async (req, res) => {
+  const { url } = req.body || {}
+  if (!url) return res.status(400).json({ error: 'url é obrigatório.' })
+
+  try {
+    // 1. Resolve redirecionamentos (meli.la, mercadolivre.com/sec/...)
+    let finalUrl = url
+    try {
+      const redirectRes = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: {
+          'User-Agent': USER_AGENT,
+          'Accept-Language': 'pt-BR,pt;q=0.9',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        signal: AbortSignal.timeout(12000),
+      }).catch(() => null)
+
+      if (redirectRes?.url) {
+        finalUrl = redirectRes.url
+      }
+    } catch {}
+
+    // 2. Extrai o ID do Item (ex: MLB356123456) via Regex
+    const match = finalUrl.match(/(MLB-?\d{8,14})/i) || url.match(/(MLB-?\d{8,14})/i)
+    if (!match) {
+      return res.status(400).json({ ok: false, error: 'Não foi possível extrair o ID (MLB) do item Mercado Livre.' })
+    }
+
+    const itemId = match[1].replace('-', '').toUpperCase()
+
+    // 3. Consulta API pública oficial do Mercado Livre (/items/{itemId})
+    const itemApiRes = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+      },
+      signal: AbortSignal.timeout(10000),
+    }).catch(() => null)
+
+    if (itemApiRes && itemApiRes.ok) {
+      const data = await itemApiRes.json()
+
+      if (data && !data.error && data.status !== 404) {
+        let title = (data.title || data.name || '').trim()
+        let priceTo = data.price || data.base_price
+        let priceFrom = data.original_price
+
+        let imageUrl = null
+        if (Array.isArray(data.pictures) && data.pictures.length > 0) {
+          imageUrl = data.pictures[0].secure_url || data.pictures[0].url
+        } else if (data.thumbnail) {
+          imageUrl = data.thumbnail
+        }
+
+        if (imageUrl) {
+          if (imageUrl.startsWith('http:')) imageUrl = imageUrl.replace('http:', 'https:')
+          if (imageUrl.includes('-I.jpg')) imageUrl = imageUrl.replace('-I.jpg', '-F.jpg')
+          if (imageUrl.includes('-I.png')) imageUrl = imageUrl.replace('-I.png', '-F.png')
+        }
+
+        if (priceFrom && priceTo && Number(priceFrom) <= Number(priceTo)) {
+          priceFrom = undefined
+        }
+
+        let discountPct = undefined
+        if (priceFrom && priceTo && Number(priceFrom) > Number(priceTo)) {
+          discountPct = Math.round(((Number(priceFrom) - Number(priceTo)) / Number(priceFrom)) * 100)
+        }
+
+        if (title) {
+          return res.json({
+            ok: true,
+            title,
+            priceTo: priceTo ? Number(priceTo) : undefined,
+            priceFrom: priceFrom ? Number(priceFrom) : undefined,
+            discountPct,
+            imageUrl: imageUrl || undefined,
+            itemId,
+            finalUrl,
+            permalink: data.permalink || finalUrl,
+            platform: 'mercadolivre',
+          })
+        }
+      }
+    }
+
+    // 4. Fallback se for catálogo (/products/{itemId})
+    const prodApiRes = await fetch(`https://api.mercadolibre.com/products/${itemId}`, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+      },
+      signal: AbortSignal.timeout(10000),
+    }).catch(() => null)
+
+    if (prodApiRes && prodApiRes.ok) {
+      const prodData = await prodApiRes.json()
+      let title = (prodData.name || prodData.title || '').trim()
+      let priceTo = prodData.buy_box_winner?.price || prodData.price
+      let priceFrom = prodData.buy_box_winner?.original_price || prodData.original_price
+      let imageUrl = null
+
+      if (Array.isArray(prodData.pictures) && prodData.pictures.length > 0) {
+        imageUrl = prodData.pictures[0].secure_url || prodData.pictures[0].url
+      }
+
+      if (imageUrl) {
+        if (imageUrl.startsWith('http:')) imageUrl = imageUrl.replace('http:', 'https:')
+        if (imageUrl.includes('-I.jpg')) imageUrl = imageUrl.replace('-I.jpg', '-F.jpg')
+      }
+
+      if (priceFrom && priceTo && Number(priceFrom) <= Number(priceTo)) {
+        priceFrom = undefined
+      }
+
+      let discountPct = undefined
+      if (priceFrom && priceTo && Number(priceFrom) > Number(priceTo)) {
+        discountPct = Math.round(((Number(priceFrom) - Number(priceTo)) / Number(priceFrom)) * 100)
+      }
+
+      return res.json({
+        ok: true,
+        title,
+        priceTo: priceTo ? Number(priceTo) : undefined,
+        priceFrom: priceFrom ? Number(priceFrom) : undefined,
+        discountPct,
+        imageUrl: imageUrl || undefined,
+        itemId,
+        finalUrl,
+        platform: 'mercadolivre',
+      })
+    }
+
+    return res.status(404).json({ ok: false, error: 'Item não encontrado na API pública do Mercado Livre.' })
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message })
   }
 })
 

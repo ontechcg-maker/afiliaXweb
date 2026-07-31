@@ -27,14 +27,24 @@ function detectPlatform(url: string): string {
  * Expande e desencurta URLs (meli.la, amzn.to, shope.ee, magazineluiza.onelink.me, etc.)
  */
 export async function unshortenUrl(url: string): Promise<string> {
-  if (
-    url.includes('mercadolivre.com.br') ||
-    url.includes('shopee.com.br') ||
+  // Links encurtados de afiliado (meli.la, /sec/, shope.ee, amzn.to, etc.) DEVEM ser expandidos no backend
+  const isShortLink =
+    url.includes('meli.la') ||
+    url.includes('/sec/') ||
+    url.includes('mercl.io') ||
     url.includes('shope.ee') ||
-    url.includes('amazon.com.br') ||
+    url.includes('amzn.to') ||
+    url.includes('onelink.me') ||
+    url.includes('mglu.io')
+
+  if (!isShortLink && (
+    url.includes('produto.mercadolivre.com.br') ||
+    url.includes('mercadolivre.com.br/p/') ||
+    url.includes('shopee.com.br/product') ||
+    url.includes('amazon.com.br/dp/') ||
     url.includes('m.magazineluiza.com.br') ||
     url.includes('aliexpress.com/item')
-  ) {
+  )) {
     return url
   }
 
@@ -108,8 +118,38 @@ export async function scrapeProduct(rawUrl: string): Promise<ScrapedProduct> {
   let bestResult: ScrapedProduct | null = null
 
   if (platform === 'mercadolivre') {
+    // 1. Tenta extração de alta precisão via backend Express (/api/scrape/mercadolivre)
+    try {
+      const token = await getAuthToken()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const backendRes = await fetch('/api/scrape/mercadolivre', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ url: rawUrl }),
+      })
+
+      if (backendRes.ok) {
+        const data = await backendRes.json()
+        if (data && data.ok && data.title) {
+          return {
+            title: data.title,
+            priceTo: data.priceTo,
+            priceFrom: data.priceFrom,
+            discountPct: data.discountPct,
+            imageUrl: data.imageUrl,
+            platform: 'mercadolivre',
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao consultar backend ML API, aplicando fallback local:', e)
+    }
+
+    // 2. Fallback de extração local no frontend
     const widMatch = url.match(/wid=(MLB[0-9]+)/i)
-    const generalMatch = url.match(/(MLB-?[0-9]{8,12})/i)
+    const generalMatch = url.match(/(MLB-?[0-9]{8,14})/i)
     const pMatch = url.match(/\/p\/(MLB[0-9]+)/i)
 
     const mlIds: string[] = []
