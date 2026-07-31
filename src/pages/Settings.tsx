@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
-import { Save, Eye, EyeOff, Loader, CheckCircle, XCircle, Bot, MessageSquare, Send, Copy, Check, Code, User, Sun, Moon, Palette, ShieldCheck, Sparkles, Plus, Trash2 } from 'lucide-react'
+import { Save, Eye, EyeOff, Loader, CheckCircle, XCircle, Bot, MessageSquare, Send, Copy, Check, Code, User, Sun, Moon, Palette, ShieldCheck, Sparkles, Plus, Trash2, Info } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { INITIAL_SQL_SCHEMA } from '../services/supabaseClient'
 import { getTelegramBotInfo } from '../services/telegramService'
+import { APP_VERSION, APP_RELEASE_NAME, APP_BUILD_DATE } from '../version'
 
 function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const [show, setShow] = useState(false)
@@ -408,6 +409,25 @@ export default function Settings() {
               {INITIAL_SQL_SCHEMA}
             </pre>
           )}
+        </div>
+      </Section>
+
+      {/* Informações da Versão do Sistema */}
+      <Section icon={Info} title="Versão do Sistema">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                AfiliaX SaaS {APP_RELEASE_NAME}
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'rgba(99,102,241,0.15)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.3)' }}>
+                v{APP_VERSION}
+              </span>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              Data de Compilação: {APP_BUILD_DATE} • Suporte completo a dispositivos móveis e multi-tenant.
+            </p>
+          </div>
         </div>
       </Section>
 

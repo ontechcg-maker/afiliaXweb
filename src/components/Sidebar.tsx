@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
+import { APP_VERSION } from '../version'
 
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -50,7 +51,7 @@ export default function Sidebar() {
       >
         {/* Logo & Mobile Close */}
         <div style={{ padding: '0 20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div
               style={{
                 width: 36,
@@ -74,6 +75,19 @@ export default function Sidebar() {
               }}
             >
               AfiliaX
+            </span>
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                padding: '2px 6px',
+                borderRadius: 6,
+                background: 'rgba(99, 102, 241, 0.15)',
+                color: '#818cf8',
+                border: '1px solid rgba(99, 102, 241, 0.3)',
+              }}
+            >
+              v{APP_VERSION}
             </span>
           </div>
 
