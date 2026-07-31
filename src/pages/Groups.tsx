@@ -206,7 +206,7 @@ export default function Groups() {
   const whatsappNumber = userProfile?.whatsapp_number
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', padding: 28 }}>
+    <div className="page-container" style={{ height: '100%', overflowY: 'auto', padding: 28 }}>
       {/* Status Card */}
       <div className="card animate-fade-in" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>

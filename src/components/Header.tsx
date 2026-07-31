@@ -1,4 +1,4 @@
-import { Bell, Bot, LogOut, Sun, Moon, Crown, Zap } from 'lucide-react'
+import { Bell, Bot, LogOut, Sun, Moon, Crown, Zap, Menu } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { logout } from '../services/authService'
 
@@ -13,7 +13,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
 }
 
 export default function Header() {
-  const { activeTab, settings, saasAiInfo, setAuthenticated, theme, toggleTheme, userProfile } = useApp()
+  const { activeTab, settings, saasAiInfo, setAuthenticated, theme, toggleTheme, userProfile, toggleMobileMenu } = useApp()
   const page = PAGE_TITLES[activeTab] || { title: activeTab, subtitle: '' }
   
   const provider = saasAiInfo?.provider || settings.ai.provider || 'gemini'
@@ -41,6 +41,7 @@ export default function Header() {
 
   return (
     <header
+      className="header-container"
       style={{
         height: 64,
         background: 'var(--bg-header)',
@@ -48,21 +49,32 @@ export default function Header() {
         display: 'flex',
         alignItems: 'center',
         padding: '0 28px',
-        gap: 16,
+        gap: 12,
         flexShrink: 0,
         transition: 'background 0.3s ease, border-color 0.3s ease',
       }}
     >
+      {/* Mobile Hambúrguer Button */}
+      <button
+        onClick={toggleMobileMenu}
+        className="mobile-menu-btn"
+        title="Abrir Menu"
+        aria-label="Abrir Menu Lateral"
+      >
+        <Menu size={20} />
+      </button>
+
       {/* Page title */}
-      <div style={{ flex: 1 }}>
-        <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {page.title}
         </h1>
-        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>{page.subtitle}</p>
+        <p className="header-subtitle" style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{page.subtitle}</p>
       </div>
 
       {/* Plan Badge */}
       <div
+        className="header-badge header-badge-plan"
         title={`Seu Plano Atual: ${userPlan}`}
         style={{
           display: 'flex',
@@ -86,6 +98,7 @@ export default function Header() {
 
       {/* AI Provider Badge */}
       <div
+        className="header-badge header-badge-ai"
         title={`Inteligência Artificial ativa no SaaS: ${aiLabel}`}
         style={{
           display: 'flex',

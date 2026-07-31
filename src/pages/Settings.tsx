@@ -91,7 +91,7 @@ export default function Settings() {
 
   return (
     <div
-      className="animate-fade-in"
+      className="animate-fade-in page-container"
       style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 20, overflowY: 'auto', height: '100%', maxWidth: 760, margin: '0 auto', width: '100%' }}
     >
       {/* Conta do usuário */}

@@ -54,6 +54,10 @@ interface AppContextType {
   theme: ThemeMode
   setTheme: (theme: ThemeMode) => void
   toggleTheme: () => void
+  isMobileMenuOpen: boolean
+  setIsMobileMenuOpen: (v: boolean) => void
+  toggleMobileMenu: () => void
+  closeMobileMenu: () => void
 }
 
 const defaultSettings: AppSettings = {
@@ -91,6 +95,10 @@ const AppContext = createContext<AppContextType>({
   theme: 'dark',
   setTheme: () => {},
   toggleTheme: () => {},
+  isMobileMenuOpen: false,
+  setIsMobileMenuOpen: () => {},
+  toggleMobileMenu: () => {},
+  closeMobileMenu: () => {},
 })
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -99,7 +107,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [supabaseConnected, setSupabaseConnected] = useState(Boolean(supabase))
   const [evolutionConnected, setEvolutionConnected] = useState(false)
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const [activeTab, setActiveTabState] = useState('dashboard')
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+
+  const toggleMobileMenu = () => setIsMobileMenuOpen((prev) => !prev)
+  const closeMobileMenu = () => setIsMobileMenuOpen(false)
+
+  const setActiveTab = (tab: string) => {
+    setActiveTabState(tab)
+    setIsMobileMenuOpen(false)
+  }
 
   // Estado do Tema (Light / Dark)
   const [theme, setThemeState] = useState<ThemeMode>(() => {
@@ -276,6 +293,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         theme,
         setTheme,
         toggleTheme,
+        isMobileMenuOpen,
+        setIsMobileMenuOpen,
+        toggleMobileMenu,
+        closeMobileMenu,
       }}
     >
       {children}

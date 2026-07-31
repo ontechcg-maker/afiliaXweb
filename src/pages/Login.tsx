@@ -83,7 +83,7 @@ export default function Login({ onSuccess, onGoToRegister }: LoginProps) {
           pointerEvents: 'none',
         }}
       />
-      <div style={cardStyle}>
+      <div className="card-auth" style={cardStyle}>
         <div style={{ textAlign: 'center' }}>
           <div style={logoBox}><Zap size={28} color="#22d3ee" /></div>
           <h1 style={titleStyle}>AfiliaX</h1>

@@ -176,10 +176,10 @@ export default function History() {
 
   return (
     <div
-      className="animate-fade-in"
+      className="animate-fade-in page-container"
       style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 20, overflowY: 'auto', height: '100%' }}
     >
-      {/* Header Notification */}
+      {/* Notifications */}
       {successMsg && (
         <div
           style={{
@@ -198,9 +198,8 @@ export default function History() {
           {successMsg}
         </div>
       )}
-
-      {/* Stats Cards */}
-      <div style={{ display: 'flex', gap: 14 }}>
+      {/* Metric Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 14 }}>
         {[
           { label: 'Total Enviados', value: totalSent, color: '#22c55e', icon: CheckCircle },
           { label: 'Taxa de Sucesso', value: `${successRate}%`, color: '#22d3ee', icon: HistoryIcon },
@@ -234,7 +233,7 @@ export default function History() {
       </div>
 
       {/* Filters Bar */}
-      <div className="card" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+      <div className="card" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1 }}>
           <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#525252' }} />
           <input

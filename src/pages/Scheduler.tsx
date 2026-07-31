@@ -137,7 +137,7 @@ export default function Scheduler() {
 
   return (
     <div
-      className="animate-fade-in"
+      className="animate-fade-in page-container"
       style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 20, overflowY: 'auto', height: '100%' }}
     >
       {/* Health Score Banner */}
@@ -150,6 +150,7 @@ export default function Scheduler() {
           display: 'flex',
           alignItems: 'center',
           gap: 14,
+          flexWrap: 'wrap',
         }}
       >
         <div
@@ -220,7 +221,7 @@ export default function Scheduler() {
       )}
 
       {/* Stats Row */}
-      <div style={{ display: 'flex', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 14 }}>
         {[
           { label: 'Pendentes', value: pending.length, color: '#6366f1', icon: Clock },
           { label: 'Enviados', value: sent.length, color: '#22c55e', icon: CheckCircle },

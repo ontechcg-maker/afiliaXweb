@@ -218,7 +218,7 @@ export default function Admin() {
 
   return (
     <div
-      className="animate-fade-in"
+      className="animate-fade-in page-container"
       style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 24, overflowY: 'auto', height: '100%' }}
     >
       {/* Header Banner */}
@@ -231,6 +231,8 @@ export default function Admin() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -276,7 +278,7 @@ export default function Admin() {
       )}
 
       {/* Grid de Estatísticas Globais */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
         <StatCard
           icon={Users}
           label="Total de Clientes"

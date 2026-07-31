@@ -442,10 +442,10 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
   }
 
   return (
-    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+    <div className="new-post-container" style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       {/* Left Panel - Form */}
       <div
-        className="animate-fade-in"
+        className="animate-fade-in new-post-form-panel page-container"
         style={{
           flex: 1,
           overflowY: 'auto',
@@ -453,7 +453,7 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
           display: 'flex',
           flexDirection: 'column',
           gap: 20,
-          borderRight: '1px solid #1a1a1a',
+          borderRight: '1px solid var(--border-color)',
         }}
       >
         {/* URL Input */}
@@ -1036,6 +1036,7 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
 
       {/* Right Panel - Live Preview */}
       <div
+        className="new-post-preview-panel"
         style={{
           width: 400,
           flexShrink: 0,

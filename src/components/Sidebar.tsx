@@ -8,6 +8,7 @@ import {
   Zap,
   ChevronRight,
   ShieldCheck,
+  X,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 
@@ -20,52 +21,72 @@ const navItems = [
 ]
 
 export default function Sidebar() {
-  const { activeTab, setActiveTab, supabaseConnected, evolutionConnected, userProfile } = useApp()
+  const { activeTab, setActiveTab, supabaseConnected, evolutionConnected, userProfile, isMobileMenuOpen, closeMobileMenu } = useApp()
   const isAdmin = userProfile?.role === 'admin' || !userProfile?.role // Mostra por padrão se for admin ou se ainda não definiu role
 
   return (
-    <aside
-      style={{
-        width: 220,
-        minWidth: 220,
-        background: 'var(--bg-sidebar)',
-        borderRight: '1px solid var(--border-color)',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: '24px 0',
-        gap: 4,
-        transition: 'background 0.3s ease, border-color 0.3s ease',
-      }}
-    >
-      {/* Logo */}
-      <div style={{ padding: '0 20px 24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              background: 'linear-gradient(135deg, #22d3ee, #6366f1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Zap size={18} color="white" />
+    <>
+      {/* Mobile Backdrop Overlay */}
+      {isMobileMenuOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={closeMobileMenu}
+        />
+      )}
+
+      <aside
+        className={`sidebar-aside ${isMobileMenuOpen ? 'open' : ''}`}
+        style={{
+          width: 220,
+          minWidth: 220,
+          background: 'var(--bg-sidebar)',
+          borderRight: '1px solid var(--border-color)',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '24px 0',
+          gap: 4,
+          transition: 'background 0.3s ease, border-color 0.3s ease, transform 0.3s ease',
+        }}
+      >
+        {/* Logo & Mobile Close */}
+        <div style={{ padding: '0 20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: 'linear-gradient(135deg, #22d3ee, #6366f1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Zap size={18} color="white" />
+            </div>
+            <span
+              style={{
+                fontSize: 20,
+                fontWeight: 800,
+                background: 'linear-gradient(135deg, #22d3ee, #6366f1)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}
+            >
+              AfiliaX
+            </span>
           </div>
-          <span
-            style={{
-              fontSize: 20,
-              fontWeight: 800,
-              background: 'linear-gradient(135deg, #22d3ee, #6366f1)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }}
+
+          {/* Close button inside sidebar on mobile */}
+          <button
+            onClick={closeMobileMenu}
+            className="sidebar-close-btn"
+            title="Fechar Menu"
+            aria-label="Fechar Menu Lateral"
           >
-            AfiliaX
-          </span>
+            <X size={20} color="var(--text-muted)" />
+          </button>
         </div>
-      </div>
 
       {/* Nav Section Header */}
       <div style={{ padding: '0 20px 8px' }}>
@@ -213,5 +234,6 @@ export default function Sidebar() {
         </div>
       </div>
     </aside>
+  </>
   )
 }

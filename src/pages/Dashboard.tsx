@@ -143,7 +143,7 @@ export default function Dashboard() {
 
   return (
     <div
-      className="animate-fade-in"
+      className="animate-fade-in page-container"
       style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 24, overflowY: 'auto', height: '100%' }}
     >
       {/* Welcome Banner */}
@@ -157,6 +157,7 @@ export default function Dashboard() {
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 16,
+          flexWrap: 'wrap',
         }}
       >
         <div>
@@ -169,8 +170,8 @@ export default function Dashboard() {
         </div>
         <div
           style={{
-            width: 64,
-            height: 64,
+            width: 56,
+            height: 56,
             borderRadius: 16,
             background: 'linear-gradient(135deg, #22d3ee, #6366f1)',
             display: 'flex',
@@ -179,7 +180,7 @@ export default function Dashboard() {
             flexShrink: 0,
           }}
         >
-          <Zap size={28} color="white" />
+          <Zap size={26} color="white" />
         </div>
       </div>
 
@@ -205,7 +206,7 @@ export default function Dashboard() {
       )}
 
       {/* Stats Grid */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
         <StatCard
           icon={Send}
           label="Ofertas Enviadas Hoje"
@@ -248,7 +249,7 @@ export default function Dashboard() {
         <h3 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
           Ações Rápidas
         </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
           <QuickActionCard
             emoji="🔗"
             title="Nova Oferta"
