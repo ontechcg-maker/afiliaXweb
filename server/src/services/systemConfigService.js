@@ -11,6 +11,8 @@ export async function getSystemConfig() {
   let aiModel = 'google/gemini-2.0-flash-exp:free'
   let shopeeAppId = process.env.SHOPEE_APP_ID || ''
   let shopeeAppSecret = process.env.SHOPEE_APP_SECRET || ''
+  let customModel = ''
+
 
   if (supabaseAdmin) {
     try {
