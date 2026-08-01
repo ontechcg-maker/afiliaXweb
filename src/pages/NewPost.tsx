@@ -7,15 +7,8 @@ import MockupPreview from '../components/MockupPreview'
 import { calculateNextScheduleTime, loadQueue, saveQueue, createBackendSchedule, type ScheduledPost } from '../services/schedulerService'
 import { getGroups, sendTextMessage, sendMediaMessage, getRandomAntiBanDelay, delay, type WhatsAppGroup } from '../services/whatsappService'
 import { getDiscordChannels, sendDiscordMessage, type DiscordChannel } from '../services/discordService'
+import ToneSelector from '../components/NewPost/ToneSelector'
 
-const TONE_OPTIONS: { id: CopyTone; label: string; emoji: string }[] = [
-  { id: 'urgent', label: 'Urgente 🔥', emoji: '⚡' },
-  { id: 'casual', label: 'Casual / Achadinho 😄', emoji: '😄' },
-  { id: 'review', label: 'Review ⭐', emoji: '⭐' },
-  { id: 'short', label: 'Curto 💨', emoji: '💨' },
-  { id: 'aggressive', label: 'Agressivo (PAS) 😈', emoji: '😈' },
-  { id: 'funny', label: 'Engraçado 🤣', emoji: '🤣' },
-]
 
 /**
  * Formata um valor numérico em centavos para a máscara monetária BRL (R$ 0,00) de trás para frente
@@ -647,32 +640,18 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
             </div>
           </div>
 
-          {/* Tone Selector - 6 Master Approaches */}
-          <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-            {TONE_OPTIONS.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => {
-                  setTone(t.id)
-                  setSelectedTemplateId('')
-                }}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 8,
-                  border: tone === t.id && !selectedTemplateId ? '1px solid rgba(34,211,238,0.5)' : '1px solid #2a2a2a',
-                  background: tone === t.id && !selectedTemplateId ? 'rgba(34,211,238,0.08)' : 'transparent',
-                  color: tone === t.id && !selectedTemplateId ? '#22d3ee' : '#737373',
-                  fontSize: 12,
-                  fontWeight: tone === t.id && !selectedTemplateId ? 600 : 400,
-                  cursor: 'pointer',
-                  fontFamily: 'Inter, sans-serif',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
+          {/* Tone Selector */}
+          <div className="mb-4">
+            <ToneSelector
+              selectedTone={tone}
+              onSelectTone={(t) => {
+                setTone(t)
+                setSelectedTemplateId('')
+              }}
+              disabled={generatingCopy}
+            />
           </div>
+
 
           {/* Prompt Studio Templates Selector */}
           {(settings.customTemplates || []).length > 0 && (

@@ -143,7 +143,22 @@ CREATE TABLE IF NOT EXISTS public.user_settings (
 -- ----------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  is_first_user BOOLEAN;
+  assigned_role TEXT := 'user';
+  assigned_plan TEXT := 'free';
+  assigned_limit INT := 5;
 BEGIN
+  -- Verifica se este é o primeiro usuário cadastrado na plataforma
+  SELECT NOT EXISTS (SELECT 1 FROM public.profiles) INTO is_first_user;
+
+  -- Se for o primeiro usuário ou se tiver o metadado 'is_admin' nos metadados da conta
+  IF is_first_user OR (NEW.raw_user_meta_data->>'is_admin')::boolean = true THEN
+    assigned_role := 'admin';
+    assigned_plan := 'agency';
+    assigned_limit := 99999;
+  END IF;
+
   INSERT INTO public.profiles (
     id, 
     email, 
@@ -154,14 +169,14 @@ BEGIN
   VALUES (
     NEW.id,
     NEW.email,
-    CASE WHEN NEW.email = 'hevertonsalvador.cg@gmail.com' THEN 'admin' ELSE 'user' END,
-    CASE WHEN NEW.email = 'hevertonsalvador.cg@gmail.com' THEN 'agency' ELSE 'free' END,
-    CASE WHEN NEW.email = 'hevertonsalvador.cg@gmail.com' THEN 99999 ELSE 5 END
+    assigned_role,
+    assigned_plan,
+    assigned_limit
   )
   ON CONFLICT (id) DO UPDATE SET
-    role = CASE WHEN EXCLUDED.email = 'hevertonsalvador.cg@gmail.com' THEN 'admin' ELSE public.profiles.role END,
-    plan_tier = CASE WHEN EXCLUDED.email = 'hevertonsalvador.cg@gmail.com' THEN 'agency' ELSE public.profiles.plan_tier END,
-    daily_posts_limit = CASE WHEN EXCLUDED.email = 'hevertonsalvador.cg@gmail.com' THEN 99999 ELSE public.profiles.daily_posts_limit END;
+    role = COALESCE(public.profiles.role, EXCLUDED.role),
+    plan_tier = COALESCE(public.profiles.plan_tier, EXCLUDED.plan_tier),
+    daily_posts_limit = COALESCE(public.profiles.daily_posts_limit, EXCLUDED.daily_posts_limit);
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
