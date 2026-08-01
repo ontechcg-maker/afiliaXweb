@@ -9,7 +9,8 @@ export async function getSystemConfig() {
   let openaiKey = process.env.OPENAI_API_KEY || ''
   let aiProvider = 'openrouter'
   let aiModel = 'google/gemini-2.0-flash-exp:free'
-  let customModel = ''
+  let shopeeAppId = process.env.SHOPEE_APP_ID || ''
+  let shopeeAppSecret = process.env.SHOPEE_APP_SECRET || ''
 
   if (supabaseAdmin) {
     try {
@@ -24,6 +25,8 @@ export async function getSystemConfig() {
         if (map.openrouter_api_key) openrouterKey = map.openrouter_api_key.trim()
         if (map.gemini_api_key) geminiKey = map.gemini_api_key.trim()
         if (map.openai_api_key) openaiKey = map.openai_api_key.trim()
+        if (map.shopee_app_id) shopeeAppId = map.shopee_app_id.trim()
+        if (map.shopee_app_secret) shopeeAppSecret = map.shopee_app_secret.trim()
         if (map.ai_provider) aiProvider = map.ai_provider.trim()
         if (map.ai_model) aiModel = map.ai_model.trim()
         if (map.custom_model) customModel = map.custom_model.trim()
@@ -36,5 +39,5 @@ export async function getSystemConfig() {
     effectiveModel = customModel || 'google/gemini-2.0-flash-exp:free'
   }
 
-  return { baseUrl, apiKey, openrouterKey, geminiKey, openaiApiKey: openaiKey, aiProvider, aiModel: effectiveModel, customModel }
+  return { baseUrl, apiKey, openrouterKey, geminiKey, openaiApiKey: openaiKey, shopeeAppId, shopeeAppSecret, aiProvider, aiModel: effectiveModel, customModel }
 }

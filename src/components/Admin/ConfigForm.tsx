@@ -6,6 +6,8 @@ export interface AdminConfigState {
   openrouterApiKey: string
   geminiApiKey: string
   openaiApiKey: string
+  shopeeAppId: string
+  shopeeAppSecret: string
   aiProvider: string
   aiModel: string
   customModel: string
@@ -131,6 +133,41 @@ export default function ConfigForm({
               value={config.aiModel}
               onChange={(e) => setConfig({ ...config, aiModel: e.target.value })}
               placeholder="gemini-2.0-flash"
+              className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-3.5 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Shopee Open API */}
+      <div className="bg-slate-900/60 rounded-2xl p-5 border border-slate-800 space-y-4">
+        <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+          🛍️ Shopee Open API (Afiliados GraphQL)
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1">
+              SHOPEE APP ID
+            </label>
+            <input
+              type="text"
+              value={config.shopeeAppId}
+              onChange={(e) => setConfig({ ...config, shopeeAppId: e.target.value })}
+              placeholder="Ex: 1002345"
+              className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-3.5 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1">
+              SHOPEE APP SECRET
+            </label>
+            <input
+              type="password"
+              value={config.shopeeAppSecret}
+              onChange={(e) => setConfig({ ...config, shopeeAppSecret: e.target.value })}
+              placeholder="••••••••••••••••"
               className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-3.5 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500"
             />
           </div>

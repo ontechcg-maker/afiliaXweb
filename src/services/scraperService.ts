@@ -1,4 +1,5 @@
 import { getAuthToken } from './authService'
+import { getApiUrl } from './apiUrl'
 
 export interface ScrapedProduct {
   title: string
@@ -9,6 +10,7 @@ export interface ScrapedProduct {
   rating?: number
   imageUrl?: string
   platform: string
+  affiliateLink?: string
 }
 
 function detectPlatform(url: string): string {
@@ -254,6 +256,35 @@ export async function scrapeProduct(rawUrl: string): Promise<ScrapedProduct> {
     }
   }
 
+  if (platform === 'shopee') {
+    try {
+      const token = await getAuthToken()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (token) headers['Authorization'] = `Bearer ${token}`
+      const shopeeRes = await fetch(getApiUrl('/scrape/shopee'), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ url }),
+      })
+      if (shopeeRes.ok) {
+        const shopeeData = await shopeeRes.json()
+        if (shopeeData.ok && shopeeData.title) {
+          return {
+            title: shopeeData.title,
+            priceTo: shopeeData.priceTo,
+            priceFrom: shopeeData.priceFrom,
+            discountPct: shopeeData.discountPct,
+            imageUrl: shopeeData.imageUrl,
+            affiliateLink: shopeeData.affiliateLink,
+            platform: 'shopee',
+          }
+        }
+      }
+    } catch (e) {
+      console.log('Shopee API Scrape Error:', e)
+    }
+  }
+
   const slugTitle = extractTitleFromUrlSlug(url)
 
   let html = ''
@@ -263,7 +294,7 @@ export async function scrapeProduct(rawUrl: string): Promise<ScrapedProduct> {
     const token = await getAuthToken()
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (token) headers['Authorization'] = `Bearer ${token}`
-    const backendRes = await fetch('/api/fetch-html', {
+    const backendRes = await fetch(getApiUrl('/fetch-html'), {
       method: 'POST',
       headers,
       body: JSON.stringify({ url }),

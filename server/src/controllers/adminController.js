@@ -14,6 +14,8 @@ export async function getAdminConfig(req, res) {
       openrouterApiKey: config.openrouter_api_key || process.env.OPENROUTER_API_KEY || '',
       geminiApiKey: config.gemini_api_key || process.env.GEMINI_API_KEY || '',
       openaiApiKey: config.openai_api_key || process.env.OPENAI_API_KEY || '',
+      shopeeAppId: config.shopee_app_id || process.env.SHOPEE_APP_ID || '',
+      shopeeAppSecret: config.shopee_app_secret || process.env.SHOPEE_APP_SECRET || '',
       aiProvider: config.ai_provider || 'gemini',
       aiModel: config.ai_model || 'gemini-2.0-flash',
       customModel: config.custom_model || '',
@@ -25,7 +27,7 @@ export async function getAdminConfig(req, res) {
 
 export async function saveAdminConfig(req, res) {
   try {
-    const { evolutionBaseUrl, evolutionApiKey, openrouterApiKey, geminiApiKey, openaiApiKey, aiProvider, aiModel, customModel } = req.body || {}
+    const { evolutionBaseUrl, evolutionApiKey, openrouterApiKey, geminiApiKey, openaiApiKey, shopeeAppId, shopeeAppSecret, aiProvider, aiModel, customModel } = req.body || {}
     
     const items = [
       { key: 'evolution_base_url', value: evolutionBaseUrl || '' },
@@ -33,9 +35,10 @@ export async function saveAdminConfig(req, res) {
       { key: 'openrouter_api_key', value: openrouterApiKey || '' },
       { key: 'gemini_api_key', value: geminiApiKey || '' },
       { key: 'openai_api_key', value: openaiApiKey || '' },
+      { key: 'shopee_app_id', value: shopeeAppId || '' },
+      { key: 'shopee_app_secret', value: shopeeAppSecret || '' },
       { key: 'ai_provider', value: aiProvider || 'gemini' },
       { key: 'ai_model', value: aiModel || 'gemini-2.0-flash' },
-      { key: 'custom_model', value: customModel || '' },
     ]
 
     for (const item of items) {

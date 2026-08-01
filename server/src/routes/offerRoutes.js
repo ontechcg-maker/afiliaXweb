@@ -3,6 +3,7 @@ import { requireAuth } from '../middlewares/authMiddleware.js'
 import {
   unshortenUrlController,
   scrapeMercadoLivreController,
+  scrapeShopeeController,
   fetchHtmlController,
   getSchedulesController,
   createScheduleController,
@@ -15,7 +16,9 @@ const router = express.Router()
 
 router.get('/unshorten', unshortenUrlController)
 router.post('/scrape/mercadolivre', scrapeMercadoLivreController)
+router.post('/scrape/shopee', scrapeShopeeController)
 router.post('/fetch-html', fetchHtmlController)
+
 
 router.get('/schedules', requireAuth, getSchedulesController)
 router.post('/schedules/create', requireAuth, createScheduleController)

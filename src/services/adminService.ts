@@ -78,6 +78,8 @@ export interface SystemConfig {
   openrouterApiKey: string
   geminiApiKey: string
   openaiApiKey: string
+  shopeeAppId?: string
+  shopeeAppSecret?: string
   aiProvider?: string
   aiModel?: string
   customModel?: string

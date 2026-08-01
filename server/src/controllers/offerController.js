@@ -1,5 +1,7 @@
 import { supabaseAdmin } from '../config/supabase.js'
 import { unshortenUrlService, scrapeMercadoLivreService, fetchHtmlService } from '../services/scraperService.js'
+import { capturarDadosShopeeService } from '../services/shopeeService.js'
+import { getSystemConfig } from '../services/systemConfigService.js'
 import { runScheduler } from '../services/schedulerService.js'
 
 export async function unshortenUrlController(req, res) {
@@ -18,6 +20,45 @@ export async function scrapeMercadoLivreController(req, res) {
   if (!url) return res.status(400).json({ error: 'url é obrigatório.' })
   try {
     const data = await scrapeMercadoLivreService(url)
+    res.json(data)
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message })
+  }
+}
+
+export async function scrapeShopeeController(req, res) {
+  const { url } = req.body || {}
+  if (!url) return res.status(400).json({ error: 'url é obrigatório.' })
+
+  try {
+    const sysConfig = await getSystemConfig()
+    let appId = sysConfig.shopeeAppId
+    let secret = sysConfig.shopeeAppSecret
+
+    // Se o usuário autenticado possuir chaves próprias no perfil
+    if (req.user?.id && supabaseAdmin) {
+      try {
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('shopee_app_key, shopee_app_secret')
+          .eq('id', req.user.id)
+          .maybeSingle()
+
+        if (profile?.shopee_app_key && profile?.shopee_app_secret) {
+          appId = profile.shopee_app_key.trim()
+          secret = profile.shopee_app_secret.trim()
+        }
+      } catch {}
+    }
+
+    if (!appId || !secret) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Chaves da API da Shopee não configuradas no sistema. Configure o SHOPEE_APP_ID e SECRET no Painel Admin ou em suas Configurações.',
+      })
+    }
+
+    const data = await capturarDadosShopeeService(url, appId, secret)
     res.json(data)
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message })

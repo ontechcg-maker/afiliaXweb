@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Save, Eye, EyeOff, Loader, CheckCircle, XCircle, Bot, MessageSquare, Send, Copy, Check, Code, User, Sun, Moon, Palette, ShieldCheck, Sparkles, Plus, Trash2, Info } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { INITIAL_SQL_SCHEMA } from '../services/supabaseClient'
@@ -44,6 +44,16 @@ export default function Settings() {
   const [tgBotName, setTgBotName] = useState('')
   const [showSql, setShowSql] = useState(false)
   const [copiedSql, setCopiedSql] = useState(false)
+  const [shopeeAppKey, setShopeeAppKey] = useState(userProfile?.shopee_app_key || '')
+  const [shopeeAppSecret, setShopeeAppSecret] = useState(userProfile?.shopee_app_secret || '')
+
+  useEffect(() => {
+    if (userProfile) {
+      if (userProfile.shopee_app_key) setShopeeAppKey(userProfile.shopee_app_key)
+      if (userProfile.shopee_app_secret) setShopeeAppSecret(userProfile.shopee_app_secret)
+    }
+  }, [userProfile])
+
 
   // Prompt Studio State & Handlers
   const [showAddTemplate, setShowAddTemplate] = useState(false)
@@ -200,6 +210,33 @@ export default function Settings() {
             {tgStatus === 'error' && <span style={{ color: '#ef4444', fontSize: 13 }}><XCircle size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Token inválido</span>}
           </div>
           <p style={{ fontSize: 11, color: '#525252' }}>💡 Crie seu bot com o <strong style={{ color: '#2aabee' }}>@BotFather</strong> no Telegram.</p>
+        </div>
+      </Section>
+
+      {/* Shopee Open API (Afiliados) */}
+      <Section icon={Sparkles} title="Shopee Open API (Afiliados GraphQL)">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <p style={{ fontSize: 12, color: '#525252', marginBottom: 6 }}>SHOPEE APP ID</p>
+            <input
+              className="input-glass"
+              type="text"
+              value={shopeeAppKey}
+              onChange={(e) => setShopeeAppKey(e.target.value)}
+              placeholder="Ex: 1002345"
+            />
+          </div>
+          <div>
+            <p style={{ fontSize: 12, color: '#525252', marginBottom: 6 }}>SHOPEE APP SECRET</p>
+            <PasswordInput
+              value={shopeeAppSecret}
+              onChange={(v) => setShopeeAppSecret(v)}
+              placeholder="••••••••••••••••"
+            />
+          </div>
+          <p style={{ fontSize: 11, color: '#525252' }}>
+            💡 Se deixado em branco, o sistema utilizará as chaves globais da plataforma ou o extrator secundário automático.
+          </p>
         </div>
       </Section>
 
