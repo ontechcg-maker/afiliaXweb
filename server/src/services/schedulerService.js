@@ -20,7 +20,6 @@ export async function runScheduler() {
   }
 
   const now = new Date().toISOString()
-  console.log(`[Scheduler] Ciclo iniciado às ${new Date().toLocaleTimeString('pt-BR')} | Procurando agendamentos <= ${now}`)
 
   const { data: duePosts, error } = await supabaseAdmin
     .from('schedules')
@@ -34,7 +33,6 @@ export async function runScheduler() {
   }
 
   if (!duePosts || duePosts.length === 0) {
-    console.log('[Scheduler] Nenhum agendamento pendente no momento.')
     return 0
   }
 
