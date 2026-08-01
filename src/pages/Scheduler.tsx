@@ -110,12 +110,28 @@ export default function Scheduler() {
     await deleteBackendSchedule(id)
   }
 
-  const handleClearSent = () => {
+  const [clearingSent, setClearingSent] = useState(false)
+
+  const handleClearSent = async () => {
+    const sentItems = queue.filter((p) => p.status === 'sent')
+    if (sentItems.length === 0) return
+
+    setClearingSent(true)
     const updatedQueue = queue.filter((p) => p.status !== 'sent')
     setQueue(updatedQueue)
     saveQueue(updatedQueue)
-    setSuccessMsg('🧹 Ofertas enviadas foram limpas da fila!')
-    setTimeout(() => setSuccessMsg(null), 3000)
+
+    try {
+      for (const item of sentItems) {
+        await deleteBackendSchedule(item.id)
+      }
+      setSuccessMsg('🧹 Ofertas enviadas foram limpas permanentemente!')
+    } catch {
+      setErrorMsg('Falha ao limpar alguns envios do banco.')
+    } finally {
+      setClearingSent(false)
+      setTimeout(() => setSuccessMsg(null), 3000)
+    }
   }
 
   const handleStartEditDate = (post: ScheduledPost) => {
@@ -276,9 +292,11 @@ export default function Scheduler() {
               <button
                 className="btn-ghost"
                 onClick={handleClearSent}
-                style={{ padding: '7px 12px', fontSize: 12 }}
+                disabled={clearingSent}
+                style={{ padding: '7px 12px', fontSize: 12, opacity: clearingSent ? 0.6 : 1 }}
               >
-                <RefreshCw size={13} /> Limpar Enviados ({sent.length})
+                {clearingSent ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={13} />}
+                {clearingSent ? 'Limpando...' : `Limpar Enviados (${sent.length})`}
               </button>
             )}
             <button

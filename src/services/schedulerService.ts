@@ -21,6 +21,25 @@ export interface ScheduleChannel {
   targetName: string
 }
 
+export function getDeletedScheduleIds(): string[] {
+  try {
+    const raw = localStorage.getItem('afiliax_deleted_history')
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+export function saveDeletedScheduleId(id: string): void {
+  try {
+    const deleted = getDeletedScheduleIds()
+    if (!deleted.includes(id)) {
+      deleted.push(id)
+      localStorage.setItem('afiliax_deleted_history', JSON.stringify(deleted))
+    }
+  } catch {}
+}
+
 export interface HealthScore {
   score: 'excellent' | 'good' | 'warning' | 'danger'
   label: string
@@ -426,14 +445,20 @@ export async function syncSchedulesWithBackend(): Promise<ScheduledPost[]> {
     }
   }
 
-  // 3. Mescla posts locais com os do backend/database (com desduplicação)
+  // 3. Mescla posts locais com os do backend/database (com desduplicação e filtro de deletados)
+  const deletedSet = new Set(getDeletedScheduleIds())
   const postMap = new Map<string, ScheduledPost>()
 
   for (const post of backendPosts) {
-    postMap.set(post.id, post)
+    if (!deletedSet.has(post.id) && !deletedSet.has(post.offerId)) {
+      postMap.set(post.id, post)
+    }
   }
 
   for (const localPost of localQueue) {
+    if (deletedSet.has(localPost.id) || deletedSet.has(localPost.offerId)) {
+      continue
+    }
     if (!postMap.has(localPost.id)) {
       const isDuplicate = Array.from(postMap.values()).some(
         (b) =>
@@ -540,6 +565,7 @@ export async function createBackendSchedule(payload: {
  * Exclui um agendamento do banco via Backend API ou Supabase direto
  */
 export async function deleteBackendSchedule(id: string): Promise<void> {
+  saveDeletedScheduleId(id)
   try {
     const headers = await getAuthHeaders()
     await fetch(`/api/schedules/${id}/delete`, {

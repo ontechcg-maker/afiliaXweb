@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Link2, Sparkles, Image, Upload, X, Copy, Check, Loader, CheckCircle, Users, Send, MessageSquare, ShieldCheck } from 'lucide-react'
+import { Link2, Sparkles, Image, Upload, X, Copy, Check, Loader, CheckCircle, Users, Send, MessageSquare, ShieldCheck, Calendar } from 'lucide-react'
 import { scrapeProduct, type ScrapedProduct } from '../services/scraperService'
 import { generateCopy, formatCustomTemplate, type CopyTone } from '../services/aiService'
 import { useApp } from '../context/AppContext'
@@ -38,6 +38,8 @@ export default function NewPost() {
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [antiBanProgressMsg, setAntiBanProgressMsg] = useState<string | null>(null)
+  const [isScheduling, setIsScheduling] = useState(false)
+
 
   // Seleção de Grupos / Canais
   const [availableGroups, setAvailableGroups] = useState<WhatsAppGroup[]>([])
@@ -353,85 +355,94 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
   }
 
   const handleAddToQueue = async () => {
-    if (!copy.trim()) return
+    if (isScheduling || sendingNow || !copy.trim()) return
+    setIsScheduling(true)
+    setError(null)
+    setSuccessMsg(null)
 
-    const affiliateLink = affiliateTag ? `${url}?tag=${affiliateTag}` : url
-    const offerTitle = product?.title || 'Oferta de Afiliado'
+    try {
+      const affiliateLink = affiliateTag ? `${url}?tag=${affiliateTag}` : url
+      const offerTitle = product?.title || 'Oferta de Afiliado'
 
-    const channels: { type: 'whatsapp' | 'telegram' | 'discord'; targetId: string; targetName: string }[] = []
+      const channels: { type: 'whatsapp' | 'telegram' | 'discord'; targetId: string; targetName: string }[] = []
 
-    if (selectedTarget === 'all') {
-      channels.push({ type: 'whatsapp', targetId: 'all', targetName: 'Todos os Grupos do WhatsApp' })
-    } else {
-      selectedGroupIds.forEach((id) => {
-        const found = availableGroups.find((g) => g.id === id)
+      if (selectedTarget === 'all') {
+        channels.push({ type: 'whatsapp', targetId: 'all', targetName: 'Todos os Grupos do WhatsApp' })
+      } else {
+        selectedGroupIds.forEach((id) => {
+          const found = availableGroups.find((g) => g.id === id)
+          channels.push({
+            type: 'whatsapp',
+            targetId: id,
+            targetName: found?.name || 'Grupo do WhatsApp',
+          })
+        })
+      }
+
+      selectedDiscordIds.forEach((id) => {
+        const found = availableDiscordChannels.find((c) => c.id === id)
         channels.push({
-          type: 'whatsapp',
+          type: 'discord',
           targetId: id,
-          targetName: found?.name || 'Grupo do WhatsApp',
+          targetName: found?.name || 'Canal Discord',
         })
       })
-    }
 
-    selectedDiscordIds.forEach((id) => {
-      const found = availableDiscordChannels.find((c) => c.id === id)
-      channels.push({
-        type: 'discord',
-        targetId: id,
-        targetName: found?.name || 'Canal Discord',
+      if (sendToTelegram) {
+        channels.push({ type: 'telegram', targetId: 'all', targetName: 'Canal do Telegram' })
+      }
+
+      if (channels.length === 0) {
+        setError('Selecione pelo menos um destino (WhatsApp, Discord ou Telegram) para agendar.')
+        return
+      }
+
+      const existingQueue = loadQueue()
+      const nextScheduledTime = calculateNextScheduleTime(existingQueue, settings.sendIntervalMinutes)
+
+      const tempId = String(Date.now())
+
+      // Salva a oferta e o agendamento no backend ou Supabase
+      const backendRes = await createBackendSchedule({
+        title: offerTitle,
+        copyText: copy,
+        imageUrl: customImage,
+        affiliateLink: affiliateLink,
+        url: url,
+        priceFrom: product?.priceFrom,
+        priceTo: product?.priceTo,
+        discountPct: product?.discountPct,
+        coupon: product?.coupon,
+        channels: channels,
+        scheduledAt: nextScheduledTime,
       })
-    })
 
-    if (sendToTelegram) {
-      channels.push({ type: 'telegram', targetId: 'all', targetName: 'Canal do Telegram' })
+      const finalId = backendRes?.scheduleId || tempId
+      const finalOfferId = backendRes?.offerId || tempId
+
+      const newOfferPost: ScheduledPost = {
+        id: finalId,
+        offerId: finalOfferId,
+        title: offerTitle,
+        copyText: copy,
+        imageUrl: customImage,
+        affiliateLink: affiliateLink,
+        channels,
+        scheduledAt: nextScheduledTime,
+        status: 'pending',
+      }
+
+      saveQueue([...existingQueue.filter((p) => p.id !== finalId), newOfferPost])
+
+      setSuccessMsg('🚀 Oferta agendada e adicionada à fila com sucesso!')
+      setTimeout(() => {
+        setActiveTab('scheduler')
+      }, 1200)
+    } catch (err: any) {
+      setError(err.message || 'Erro ao agendar para a fila.')
+    } finally {
+      setIsScheduling(false)
     }
-
-    if (channels.length === 0) {
-      setError('Selecione pelo menos um destino (WhatsApp, Discord ou Telegram) para agendar.')
-      return
-    }
-
-    const existingQueue = loadQueue()
-    const nextScheduledTime = calculateNextScheduleTime(existingQueue, settings.sendIntervalMinutes)
-
-    const tempId = String(Date.now())
-
-    // Salva a oferta e o agendamento no backend ou Supabase
-    const backendRes = await createBackendSchedule({
-      title: offerTitle,
-      copyText: copy,
-      imageUrl: customImage,
-      affiliateLink: affiliateLink,
-      url: url,
-      priceFrom: product?.priceFrom,
-      priceTo: product?.priceTo,
-      discountPct: product?.discountPct,
-      coupon: product?.coupon,
-      channels: channels,
-      scheduledAt: nextScheduledTime,
-    })
-
-    const finalId = backendRes?.scheduleId || tempId
-    const finalOfferId = backendRes?.offerId || tempId
-
-    const newOfferPost: ScheduledPost = {
-      id: finalId,
-      offerId: finalOfferId,
-      title: offerTitle,
-      copyText: copy,
-      imageUrl: customImage,
-      affiliateLink: affiliateLink,
-      channels,
-      scheduledAt: nextScheduledTime,
-      status: 'pending',
-    }
-
-    saveQueue([...existingQueue.filter((p) => p.id !== finalId), newOfferPost])
-
-    setSuccessMsg('🚀 Oferta agendada e adicionada à fila com sucesso!')
-    setTimeout(() => {
-      setActiveTab('scheduler')
-    }, 1200)
   }
 
   return (
@@ -993,14 +1004,14 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
             type="button"
             className="btn-ghost"
             onClick={handleAddToQueue}
-            disabled={!copy.trim() || sendingNow}
+            disabled={!copy.trim() || sendingNow || isScheduling}
             style={{
               flex: 1,
               fontSize: 14,
               padding: '14px 20px',
               border: '1px solid var(--border-color)',
-              opacity: (!copy.trim() || sendingNow) ? 0.5 : 1,
-              cursor: (!copy.trim() || sendingNow) ? 'not-allowed' : 'pointer',
+              opacity: (!copy.trim() || sendingNow || isScheduling) ? 0.5 : 1,
+              cursor: (!copy.trim() || sendingNow || isScheduling) ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -1008,7 +1019,8 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
               color: 'var(--text-primary)',
             }}
           >
-            📅 Agendar para a Fila
+            {isScheduling ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Calendar size={16} />}
+            {isScheduling ? 'Agendando...' : '📅 Agendar para a Fila'}
           </button>
         </div>
       </div>
