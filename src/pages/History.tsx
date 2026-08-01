@@ -1,8 +1,26 @@
 import { useState, useEffect } from 'react'
-import { History as HistoryIcon, Search, Copy, Check, Trash2, RotateCcw, CheckCircle, Clock, AlertTriangle, Send, RefreshCw } from 'lucide-react'
+import { History as HistoryIcon, Search, Copy, Check, Trash2, RotateCcw, CheckCircle, Clock, AlertTriangle, Send, RefreshCw, Calendar } from 'lucide-react'
+
 import { loadQueue, saveQueue, formatScheduleTime, type ScheduledPost } from '../services/schedulerService'
 import { getSupabaseClient } from '../services/supabaseClient'
 import { useApp } from '../context/AppContext'
+
+function getTodayDateString(): string {
+  const d = new Date()
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getItemDateString(scheduledAt: Date | string): string {
+  const d = new Date(scheduledAt)
+  if (isNaN(d.getTime())) return ''
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 function getDeletedHistoryIds(): string[] {
   try {
@@ -19,10 +37,12 @@ function saveDeletedHistoryIds(ids: string[]): void {
   } catch {}
 }
 
+
 export default function History() {
   const { setActiveTab } = useApp()
   const [historyList, setHistoryList] = useState<ScheduledPost[]>([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [filterDate, setFilterDate] = useState<string>(() => getTodayDateString())
   const [filterChannel, setFilterChannel] = useState<'all' | 'whatsapp' | 'telegram'>('all')
   const [filterStatus, setFilterStatus] = useState<'all' | 'sent' | 'failed'>('all')
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -167,7 +187,9 @@ export default function History() {
 
     const matchesStatus = filterStatus === 'all' || item.status === filterStatus
 
-    return matchesSearch && matchesChannel && matchesStatus
+    const matchesDate = !filterDate || getItemDateString(item.scheduledAt) === filterDate
+
+    return matchesSearch && matchesChannel && matchesStatus && matchesDate
   })
 
   const totalSent = historyList.filter((h) => h.status === 'sent').length
@@ -234,7 +256,7 @@ export default function History() {
 
       {/* Filters Bar */}
       <div className="card" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: 1 }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
           <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#525252' }} />
           <input
             className="input-glass"
@@ -243,6 +265,56 @@ export default function History() {
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ paddingLeft: 36 }}
           />
+        </div>
+
+        {/* Filtro por Data */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Calendar size={14} style={{ position: 'absolute', left: 10, color: '#22d3ee', pointerEvents: 'none' }} />
+            <input
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="input-glass"
+              style={{
+                paddingLeft: 32,
+                paddingRight: 10,
+                fontSize: 13,
+                color: '#f5f5f5',
+                cursor: 'pointer',
+                background: filterDate === getTodayDateString() ? 'rgba(34,211,238,0.08)' : 'rgba(255,255,255,0.04)',
+                borderColor: filterDate === getTodayDateString() ? 'rgba(34,211,238,0.4)' : 'rgba(255,255,255,0.08)',
+              }}
+            />
+          </div>
+
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => setFilterDate(getTodayDateString())}
+            style={{
+              padding: '8px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              color: filterDate === getTodayDateString() ? '#22c55e' : '#737373',
+              borderColor: filterDate === getTodayDateString() ? 'rgba(34,197,94,0.3)' : undefined,
+              background: filterDate === getTodayDateString() ? 'rgba(34,197,94,0.1)' : undefined,
+            }}
+          >
+            Hoje
+          </button>
+
+          {filterDate && (
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setFilterDate('')}
+              style={{ padding: '8px 12px', fontSize: 12, color: '#a3a3a3' }}
+              title="Limpar filtro de data"
+            >
+              Todas as Datas
+            </button>
+          )}
         </div>
 
         <select
