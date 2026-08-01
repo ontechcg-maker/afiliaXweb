@@ -90,17 +90,38 @@ export async function getWhatsappGroupsController(req, res) {
     const list = Array.isArray(data) ? data
       : data?.groups || data?.response || data?.data || []
 
-    const groups = list
-      .filter((g) => g && typeof g === 'object')
-      .map((g) => ({
-        id: g.id || g.jid || g.groupJid || '',
-        name: g.subject || g.name || g.groupName || 'Grupo sem nome',
-        memberCount: g.size || (Array.isArray(g.participants) ? g.participants.length : 0),
-        isAdmin: g.owner === true || g.isAdmin === true || !!g.isOwner,
-      }))
-      .filter((g) => g.id.includes('@g.us') && g.name.trim().length > 0)
+    const validItems = list.filter((g) => g && typeof g === 'object')
 
-    res.json(groups)
+    const groups = await Promise.all(
+      validItems.map(async (g) => {
+        const id = g.id || g.jid || g.groupJid || ''
+        const name = g.subject || g.name || g.groupName || 'Grupo sem nome'
+        const memberCount = g.size || (Array.isArray(g.participants) ? g.participants.length : 0)
+        const isAdmin = g.owner === true || g.isAdmin === true || !!g.isOwner
+        let inviteUrl = g.inviteUrl || g.inviteLink || (g.inviteCode ? `https://chat.whatsapp.com/${g.inviteCode}` : '')
+
+        if (!inviteUrl && id.includes('@g.us')) {
+          try {
+            const inviteRes = await evolutionFetch(`/group/inviteCode/${profile.instance_name}?groupJid=${encodeURIComponent(id)}`, 'GET', null, 5000)
+            const code = inviteRes?.code || inviteRes?.inviteCode || ''
+            if (code) {
+              inviteUrl = `https://chat.whatsapp.com/${code}`
+            }
+          } catch {}
+        }
+
+        return {
+          id,
+          name,
+          memberCount,
+          isAdmin,
+          inviteUrl: inviteUrl || undefined,
+        }
+      })
+    )
+
+    const filteredGroups = groups.filter((g) => g.id.includes('@g.us') && g.name.trim().length > 0)
+    res.json(filteredGroups)
   } catch {
     res.json([])
   }

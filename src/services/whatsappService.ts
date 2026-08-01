@@ -10,6 +10,7 @@ export interface WhatsAppGroup {
   name: string
   memberCount: number
   isAdmin?: boolean
+  inviteUrl?: string
 }
 
 export interface ConnectionStatus {

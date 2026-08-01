@@ -38,6 +38,8 @@ export default function Groups() {
   const [groupSuccessMsg, setGroupSuccessMsg] = useState<{ name: string; inviteLink?: string } | null>(null)
   const [groupErrorMsg, setGroupErrorMsg] = useState<string | null>(null)
   const [copiedLink, setCopiedLink] = useState(false)
+  const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null)
+
 
   // Discord State
   const [discordChannels, setDiscordChannels] = useState<DiscordChannel[]>(() => getDiscordChannels())
@@ -482,27 +484,124 @@ export default function Groups() {
               Nenhum grupo encontrado. Certifique-se de que o WhatsApp está em pelo menos 1 grupo.
             </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {groups.map((g) => (
                 <div
                   key={g.id}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '10px 14px', borderRadius: 10,
-                    background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    padding: '12px 16px',
+                    borderRadius: 12,
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    flexWrap: 'wrap',
                   }}
                 >
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(99,102,241,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Users size={16} color="#6366f1" />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 240 }}>
+                    <div
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 12,
+                        background: 'rgba(99,102,241,0.15)',
+                        border: '1px solid rgba(99,102,241,0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Users size={18} color="#818cf8" />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                          {g.name}
+                        </p>
+                        {g.isAdmin && (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              color: '#22c55e',
+                              background: 'rgba(34,197,94,0.12)',
+                              padding: '2px 8px',
+                              borderRadius: 6,
+                              border: '1px solid rgba(34,197,94,0.25)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            Admin
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: '#737373' }}>👥 {g.memberCount} membros</span>
+                        {g.inviteUrl ? (
+                          <div
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              background: 'rgba(34,211,238,0.08)',
+                              padding: '3px 10px',
+                              borderRadius: 6,
+                              border: '1px solid rgba(34,211,238,0.25)',
+                              maxWidth: '100%',
+                            }}
+                          >
+                            <Link size={12} color="#22d3ee" style={{ flexShrink: 0 }} />
+                            <a
+                              href={g.inviteUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                fontSize: 11,
+                                color: '#22d3ee',
+                                textDecoration: 'none',
+                                fontWeight: 600,
+                                wordBreak: 'break-all',
+                              }}
+                              className="hover:underline"
+                            >
+                              {g.inviteUrl}
+                            </a>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: 11, color: '#525252', fontStyle: 'italic' }}>
+                            (Sem link público de convite)
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{g.name}</p>
-                    <p style={{ fontSize: 11, color: '#525252' }}>{g.memberCount} membros</p>
-                  </div>
-                  {g.isAdmin && (
-                    <span style={{ fontSize: 10, color: '#22c55e', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: 4, border: '1px solid rgba(34,197,94,0.2)' }}>
-                      Admin
-                    </span>
+
+                  {g.inviteUrl && (
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      onClick={() => {
+                        navigator.clipboard.writeText(g.inviteUrl!)
+                        setCopiedGroupId(g.id)
+                        setTimeout(() => setCopiedGroupId(null), 2000)
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        flexShrink: 0,
+                        borderRadius: 8,
+                        borderColor: copiedGroupId === g.id ? 'rgba(34,197,94,0.4)' : undefined,
+                        color: copiedGroupId === g.id ? '#22c55e' : undefined,
+                      }}
+                    >
+                      {copiedGroupId === g.id ? <CheckCircle size={13} color="#22c55e" /> : <Copy size={13} />}
+                      {copiedGroupId === g.id ? 'URL Copiada!' : 'Copiar URL'}
+                    </button>
                   )}
                 </div>
               ))}
