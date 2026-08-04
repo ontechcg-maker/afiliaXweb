@@ -32,6 +32,7 @@ export interface AntiBanConfig {
 export interface AppSettings {
   ai: AIConfig
   telegram: TelegramConfig
+  shopee: { appId: string; appSecret: string }
   maxGroupMembers: number
   sendIntervalMinutes: number
   customTemplates: PromptTemplate[]
@@ -63,6 +64,7 @@ interface AppContextType {
 const defaultSettings: AppSettings = {
   ai: { provider: 'openrouter', apiKey: '', model: 'google/gemini-2.0-flash-exp:free' },
   telegram: { botToken: '' },
+  shopee: { appId: '', appSecret: '' },
   maxGroupMembers: 1000,
   sendIntervalMinutes: 20,
   customTemplates: [
@@ -154,6 +156,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return {
           ai: parsed.ai || defaultSettings.ai,
           telegram: parsed.telegram || defaultSettings.telegram,
+          shopee: parsed.shopee || defaultSettings.shopee,
           maxGroupMembers: parsed.maxGroupMembers || 1000,
           sendIntervalMinutes: parsed.sendIntervalMinutes || 20,
           customTemplates: parsed.customTemplates || defaultSettings.customTemplates,
@@ -224,6 +227,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ollamaUrl: profile.ollama_url || prev.ai.ollamaUrl,
       },
       telegram: { botToken: profile.telegram_bot_token || prev.telegram.botToken },
+      shopee: {
+        appId: profile.shopee_app_key || prev.shopee?.appId || '',
+        appSecret: profile.shopee_app_secret || prev.shopee?.appSecret || '',
+      },
       maxGroupMembers: profile.max_group_members || prev.maxGroupMembers,
       sendIntervalMinutes: profile.send_interval_minutes || prev.sendIntervalMinutes,
     }))
@@ -246,9 +253,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ai_model: settings.ai.model,
         ollama_url: settings.ai.ollamaUrl,
         telegram_bot_token: settings.telegram.botToken,
+        shopee_app_key: settings.shopee?.appId,
+        shopee_app_secret: settings.shopee?.appSecret,
         max_group_members: settings.maxGroupMembers,
         send_interval_minutes: settings.sendIntervalMinutes,
-      }).catch(() => {})
+      }).catch(() => {
+        // Fallback sem shopee se colunas não existirem no Supabase
+        saveUserProfile({
+          ai_provider: settings.ai.provider,
+          ai_api_key: settings.ai.apiKey,
+          ai_model: settings.ai.model,
+          ollama_url: settings.ai.ollamaUrl,
+          telegram_bot_token: settings.telegram.botToken,
+          max_group_members: settings.maxGroupMembers,
+          send_interval_minutes: settings.sendIntervalMinutes,
+        }).catch(() => {})
+      })
     }
   }, [settings, authenticated, user])
 

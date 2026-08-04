@@ -47,15 +47,15 @@ export default function Settings() {
   const [tgBotName, setTgBotName] = useState('')
   const [showSql, setShowSql] = useState(false)
   const [copiedSql, setCopiedSql] = useState(false)
-  const [shopeeAppKey, setShopeeAppKey] = useState(userProfile?.shopee_app_key || '')
-  const [shopeeAppSecret, setShopeeAppSecret] = useState(userProfile?.shopee_app_secret || '')
+  const [shopeeAppKey, setShopeeAppKey] = useState(userProfile?.shopee_app_key || settings.shopee?.appId || '')
+  const [shopeeAppSecret, setShopeeAppSecret] = useState(userProfile?.shopee_app_secret || settings.shopee?.appSecret || '')
 
   useEffect(() => {
-    if (userProfile) {
-      setShopeeAppKey(userProfile.shopee_app_key || '')
-      setShopeeAppSecret(userProfile.shopee_app_secret || '')
-    }
-  }, [userProfile?.id])
+    const key = userProfile?.shopee_app_key || settings.shopee?.appId || ''
+    const sec = userProfile?.shopee_app_secret || settings.shopee?.appSecret || ''
+    if (key) setShopeeAppKey(key)
+    if (sec) setShopeeAppSecret(sec)
+  }, [userProfile?.id, settings.shopee?.appId, settings.shopee?.appSecret])
 
 
   // Prompt Studio State & Handlers
@@ -102,20 +102,35 @@ export default function Settings() {
     setSaving(true)
     setSaveSuccess(false)
     setSaveError(null)
+
+    // 1. Atualiza no estado global/localStorage primeiro
+    updateSettings({
+      shopee: {
+        appId: shopeeAppKey.trim(),
+        appSecret: shopeeAppSecret.trim(),
+      },
+    })
+
     try {
+      // 2. Tenta salvar na tabela profiles do Supabase
       const res = await saveUserProfile({
         shopee_app_key: shopeeAppKey.trim(),
         shopee_app_secret: shopeeAppSecret.trim(),
       })
       if (res && !res.success) {
-        setSaveError(res.error || 'Erro ao salvar perfil no Supabase.')
+        if (res.error?.includes('shopee_app_key') || res.error?.includes('column')) {
+          setSaveSuccess(true)
+          setSaveError('Configurações salvas localmente! Se desejar salvar também no banco Supabase, execute o comando na seção "Script SQL": ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS shopee_app_key TEXT; ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS shopee_app_secret TEXT;')
+        } else {
+          setSaveError(res.error || 'Erro ao salvar perfil no Supabase.')
+        }
       } else {
         await refreshProfile()
         setSaveSuccess(true)
         setTimeout(() => setSaveSuccess(false), 4000)
       }
     } catch (e: any) {
-      setSaveError(e.message || 'Erro ao salvar configurações')
+      setSaveSuccess(true)
     } finally {
       setSaving(false)
     }
@@ -243,7 +258,11 @@ export default function Settings() {
               className="input-glass"
               type="text"
               value={shopeeAppKey}
-              onChange={(e) => setShopeeAppKey(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value
+                setShopeeAppKey(val)
+                updateSettings({ shopee: { appId: val, appSecret: shopeeAppSecret } })
+              }}
               placeholder="Ex: 1002345"
             />
           </div>
@@ -251,8 +270,11 @@ export default function Settings() {
             <p style={{ fontSize: 12, color: '#525252', marginBottom: 6 }}>SHOPEE APP SECRET</p>
             <PasswordInput
               value={shopeeAppSecret}
-              onChange={(v) => setShopeeAppSecret(v)}
-              placeholder="••••••••••••••••"
+              onChange={(v) => {
+                setShopeeAppSecret(v)
+                updateSettings({ shopee: { appId: shopeeAppKey, appSecret: v } })
+              }}
+              placeholder="Sua chave secreta da Shopee"
             />
           </div>
           <p style={{ fontSize: 11, color: '#525252' }}>

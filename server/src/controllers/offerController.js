@@ -27,13 +27,13 @@ export async function scrapeMercadoLivreController(req, res) {
 }
 
 export async function scrapeShopeeController(req, res) {
-  const { url } = req.body || {}
+  const { url, shopeeAppKey, shopeeAppSecret } = req.body || {}
   if (!url) return res.status(400).json({ error: 'url é obrigatório.' })
 
   try {
     const sysConfig = await getSystemConfig()
-    let appId = sysConfig.shopeeAppId
-    let secret = sysConfig.shopeeAppSecret
+    let appId = shopeeAppKey?.trim() || sysConfig.shopeeAppId
+    let secret = shopeeAppSecret?.trim() || sysConfig.shopeeAppSecret
 
     // Se o usuário autenticado possuir chaves próprias no perfil
     if (req.user?.id && supabaseAdmin) {

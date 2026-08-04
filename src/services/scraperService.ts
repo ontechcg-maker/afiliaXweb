@@ -261,10 +261,26 @@ export async function scrapeProduct(rawUrl: string): Promise<ScrapedProduct> {
       const token = await getAuthToken()
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (token) headers['Authorization'] = `Bearer ${token}`
+
+      let localShopeeKey = ''
+      let localShopeeSecret = ''
+      try {
+        const stored = localStorage.getItem('afiliax_settings')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          if (parsed.shopee?.appId) localShopeeKey = parsed.shopee.appId
+          if (parsed.shopee?.appSecret) localShopeeSecret = parsed.shopee.appSecret
+        }
+      } catch {}
+
       const shopeeRes = await fetch(getApiUrl('/scrape/shopee'), {
         method: 'POST',
         headers,
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({
+          url,
+          shopeeAppKey: localShopeeKey || undefined,
+          shopeeAppSecret: localShopeeSecret || undefined,
+        }),
       })
       if (shopeeRes.ok) {
         const shopeeData = await shopeeRes.json()
