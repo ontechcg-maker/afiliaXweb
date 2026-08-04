@@ -4,9 +4,8 @@ import { USER_AGENT } from '../config/env.js'
 const API_URL = 'https://open-api.affiliate.shopee.com.br/graphql'
 
 /**
- * Assinatura exigida pela API de Afiliados Shopee:
- * Signature = SHA256(AppId + Timestamp + Payload + Secret)
- * IMPORTANTE: O Payload deve ser JSON compacto (sem espaços extras)
+ * Assinatura: SHA256(AppId + Timestamp + Payload + Secret)
+ * Payload deve ser o body JSON exato que será enviado
  */
 export function signShopeeRequest(appId, secret, timestamp, payload) {
   const base = String(appId) + String(timestamp) + String(payload) + String(secret)
@@ -16,36 +15,36 @@ export function signShopeeRequest(appId, secret, timestamp, payload) {
 /**
  * Chamada GraphQL à API de Afiliados da Shopee
  */
-export async function shopeeGraphQL(query, variables = {}, appId, secret) {
+export async function shopeeGraphQL(query, appId, secret) {
   if (!appId || !secret) {
     throw new Error('Chaves da Shopee (AppId / Secret) não configuradas.')
   }
 
-  // CRÍTICO: JSON compacto (sem espaços) para cálculo de assinatura e envio
-  // A Shopee valida a assinatura contra o body EXATO enviado
-  const bodyObj = { query, variables }
-  const body = JSON.stringify(bodyObj)  // JSON.stringify sem args = compacto por padrão no Node.js
+  // Body sem campo "variables" para simplificar e ter body exato para assinatura
+  const body = JSON.stringify({ query })
 
   const timestamp = Math.floor(Date.now() / 1000)
   const signature = signShopeeRequest(appId, secret, timestamp, body)
 
   console.log(`[Shopee] Req appId=${appId} ts=${timestamp} bodyLen=${body.length} sig=${signature.substring(0, 16)}...`)
+  console.log(`[Shopee] Query: ${body.substring(0, 200)}`)
 
   const res = await fetch(API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'User-Agent': USER_AGENT,
-      // CRÍTICO: sem espaço após a vírgula (formato exato da documentação)
       Authorization: `SHA256 Credential=${appId},Timestamp=${timestamp},Signature=${signature}`,
     },
     body,
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(20000),
   })
 
-  const json = await res.json().catch(() => ({}))
+  const rawText = await res.text().catch(() => '{}')
+  console.log(`[Shopee] Response HTTP=${res.status} body=${rawText.substring(0, 300)}`)
 
-  console.log(`[Shopee] Response status=${res.status} hasErrors=${!!(json.errors?.length)} hasData=${!!json.data}`)
+  let json = {}
+  try { json = JSON.parse(rawText) } catch {}
 
   if (json.errors && json.errors.length > 0) {
     const errorMsg = json.errors.map((e) => e.message || JSON.stringify(e)).join(', ')
@@ -57,11 +56,17 @@ export async function shopeeGraphQL(query, variables = {}, appId, secret) {
 }
 
 /**
- * Resolve um link curto da Shopee (s.shopee.com.br / shope.ee / etc.)
- * seguindo os redirecionamentos até a URL final e extraindo shopId e itemId.
+ * Extrai shopId e itemId de qualquer formato de URL da Shopee.
+ * Formatos suportados:
+ *  - https://s.shopee.com.br/XXXXXX  (link curto, faz redirect)
+ *  - https://shopee.com.br/produto-i.341670128.23997821333
+ *  - https://shopee.com.br/username/341670128/23997821333
+ *  - https://shopee.com.br/product/341670128/23997821333
+ *  - https://shopee.com.br/...?shopid=...&itemid=...
  */
 export async function resolveShopeeLink(shortUrl) {
   let finalUrl = shortUrl
+
   try {
     const res = await fetch(shortUrl, {
       method: 'GET',
@@ -76,22 +81,33 @@ export async function resolveShopeeLink(shortUrl) {
 
     if (res?.url) {
       finalUrl = res.url
-      console.log(`[Shopee] Resolved URL: ${finalUrl}`)
     }
+    console.log(`[Shopee] Resolved URL: ${finalUrl}`)
   } catch (e) {
     console.error(`[Shopee] resolveShopeeLink error: ${e.message}`)
   }
 
-  // Tenta todos os padrões de URL da Shopee
+  // Remove query string para facilitar extração do path
+  const urlPath = finalUrl.split('?')[0]
+
   const match =
-    finalUrl.match(/-i\.(\d+)\.(\d+)/) ||
-    finalUrl.match(/\/product\/(\d+)\/(\d+)/) ||
-    finalUrl.match(/[?&]shopid=(\d+).*[?&]itemid=(\d+)/) ||
+    // Formato: produto-i.341670128.23997821333
+    urlPath.match(/-i\.(\d+)\.(\d+)/) ||
+    // Formato: /product/341670128/23997821333
+    urlPath.match(/\/product\/(\d+)\/(\d+)/) ||
+    // Formato: /username/341670128/23997821333 (último par de segmentos numéricos)
+    urlPath.match(/\/[^\/]+\/(\d{5,})\/(\d{5,})(?:\/|$)/) ||
+    // Formato: /341670128/23997821333 (dois segmentos numéricos no final)
+    urlPath.match(/\/(\d{5,})\/(\d{5,})(?:\/|$)/) ||
+    // Query string: ?shopid=...&itemid=...
+    finalUrl.match(/[?&]shopid=(\d+)[^&]*[?&]itemid=(\d+)/i) ||
+    finalUrl.match(/[?&]itemid=(\d+)[^&]*[?&]shopid=(\d+)/i) ||
+    // Fallback na URL original
     shortUrl.match(/-i\.(\d+)\.(\d+)/) ||
     shortUrl.match(/\/product\/(\d+)\/(\d+)/)
 
   if (!match) {
-    throw new Error(`Não foi possível extrair o itemId da URL da Shopee: ${finalUrl}`)
+    throw new Error(`Não foi possível extrair shopId/itemId da URL da Shopee: ${finalUrl}`)
   }
 
   const shopId = Number(match[1])
@@ -106,12 +122,15 @@ export async function resolveShopeeLink(shortUrl) {
  * Busca dados do produto via GraphQL (productOfferV2)
  */
 export async function getShopeeProductData(itemId, appId, secret) {
-  // Usa itemId inline na query para máxima compatibilidade com a API
   const itemIdNum = Number(itemId)
+
+  // Inline itemId na query — mais compatível que variables tipadas
   const query = `{ productOfferV2(itemId: ${itemIdNum}, limit: 1) { nodes { itemId productName imageUrl priceMin priceMax priceDiscountRate offerLink } } }`
 
-  const data = await shopeeGraphQL(query, {}, appId, secret)
+  const data = await shopeeGraphQL(query, appId, secret)
   const node = data?.productOfferV2?.nodes?.[0]
+
+  console.log(`[Shopee] Product node: ${JSON.stringify(node || null)}`)
 
   if (!node) {
     throw new Error(`Produto ${itemId} não encontrado na API da Shopee (pode não fazer parte do programa de afiliados).`)
@@ -120,7 +139,6 @@ export async function getShopeeProductData(itemId, appId, secret) {
   const priceTo = parseFloat(node.priceMin) || parseFloat(node.priceMax) || 0
   const rawDiscountRate = parseFloat(node.priceDiscountRate) || 0
 
-  // Normaliza o desconto (se vier em percentual 20 ou fração 0.20)
   const discountFraction = rawDiscountRate > 1 ? rawDiscountRate / 100 : rawDiscountRate
   const discountPct = discountFraction > 0 ? Math.round(discountFraction * 100) : undefined
 
