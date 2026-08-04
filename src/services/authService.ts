@@ -152,11 +152,20 @@ export async function loadUserProfile(): Promise<UserProfile | null> {
 }
 
 /** Salva configurações do usuário no perfil (Supabase) */
-export async function saveUserProfile(updates: Partial<UserProfile>): Promise<void> {
-  if (!supabase) return
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
-  await supabase.from('profiles').update(updates).eq('id', user.id)
+export async function saveUserProfile(updates: Partial<UserProfile>): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) return { success: false, error: 'Supabase não configurado.' }
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { success: false, error: 'Usuário não autenticado.' }
+    const { error } = await supabase.from('profiles').update(updates).eq('id', user.id)
+    if (error) {
+      console.error('[authService] Erro ao salvar perfil:', error)
+      return { success: false, error: error.message }
+    }
+    return { success: true }
+  } catch (e: any) {
+    return { success: false, error: e.message || 'Erro ao salvar perfil.' }
+  }
 }
 
 /** Compatibilidade com código legado — isAuthenticated síncrono */

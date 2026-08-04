@@ -3,6 +3,7 @@ import { Save, Eye, EyeOff, Loader, CheckCircle, XCircle, Bot, MessageSquare, Se
 import { useApp } from '../context/AppContext'
 import { INITIAL_SQL_SCHEMA } from '../services/supabaseClient'
 import { getTelegramBotInfo } from '../services/telegramService'
+import { saveUserProfile } from '../services/authService'
 import { APP_VERSION, APP_RELEASE_NAME, APP_BUILD_DATE } from '../version'
 
 function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
@@ -37,8 +38,10 @@ function Section({ icon: Icon, title, children }: { icon: React.ElementType; tit
 }
 
 export default function Settings() {
-  const { settings, updateSettings, user, userProfile, theme, setTheme } = useApp()
+  const { settings, updateSettings, user, userProfile, refreshProfile, theme, setTheme } = useApp()
   const [saving, setSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [testingTg, setTestingTg] = useState(false)
   const [tgStatus, setTgStatus] = useState<'idle' | 'ok' | 'error'>('idle')
   const [tgBotName, setTgBotName] = useState('')
@@ -49,10 +52,10 @@ export default function Settings() {
 
   useEffect(() => {
     if (userProfile) {
-      if (userProfile.shopee_app_key) setShopeeAppKey(userProfile.shopee_app_key)
-      if (userProfile.shopee_app_secret) setShopeeAppSecret(userProfile.shopee_app_secret)
+      setShopeeAppKey(userProfile.shopee_app_key || '')
+      setShopeeAppSecret(userProfile.shopee_app_secret || '')
     }
-  }, [userProfile])
+  }, [userProfile?.id])
 
 
   // Prompt Studio State & Handlers
@@ -95,9 +98,27 @@ export default function Settings() {
     setTimeout(() => setCopiedSql(false), 2000)
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true)
-    setTimeout(() => setSaving(false), 800)
+    setSaveSuccess(false)
+    setSaveError(null)
+    try {
+      const res = await saveUserProfile({
+        shopee_app_key: shopeeAppKey.trim(),
+        shopee_app_secret: shopeeAppSecret.trim(),
+      })
+      if (res && !res.success) {
+        setSaveError(res.error || 'Erro ao salvar perfil no Supabase.')
+      } else {
+        await refreshProfile()
+        setSaveSuccess(true)
+        setTimeout(() => setSaveSuccess(false), 4000)
+      }
+    } catch (e: any) {
+      setSaveError(e.message || 'Erro ao salvar configurações')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -468,7 +489,17 @@ export default function Settings() {
         </div>
       </Section>
 
-      <button className="btn-primary" onClick={handleSave} style={{ fontSize: 14, padding: '14px 24px', alignSelf: 'flex-start' }}>
+      {saveSuccess && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#22c55e', fontSize: 13, fontWeight: 600, padding: '10px 16px', borderRadius: 8, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)' }}>
+          <CheckCircle size={16} /> Configurações salvas com sucesso!
+        </div>
+      )}
+      {saveError && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444', fontSize: 13, fontWeight: 600, padding: '10px 16px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
+          <XCircle size={16} /> {saveError}
+        </div>
+      )}
+      <button className="btn-primary" onClick={handleSave} disabled={saving} style={{ fontSize: 14, padding: '14px 24px', alignSelf: 'flex-start' }}>
         {saving ? <><Loader size={15} /> Salvando...</> : <><Save size={15} /> Salvar Configurações</>}
       </button>
     </div>

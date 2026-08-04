@@ -57,13 +57,17 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   ai_api_key TEXT,
   ai_model TEXT DEFAULT 'gemini-1.5-flash',
   ollama_url TEXT,
-  telegram_bot_token TEXT,
+  shopee_app_key TEXT,
+  shopee_app_secret TEXT,
   max_group_members INTEGER DEFAULT 1000,
   send_interval_minutes INTEGER DEFAULT 20,
   role TEXT DEFAULT 'user',
   is_blocked BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS shopee_app_key TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS shopee_app_secret TEXT;
 
 CREATE TABLE IF NOT EXISTS public.offers (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,

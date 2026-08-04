@@ -44,8 +44,10 @@ export async function scrapeShopeeController(req, res) {
           .eq('id', req.user.id)
           .maybeSingle()
 
-        if (profile?.shopee_app_key && profile?.shopee_app_secret) {
+        if (profile?.shopee_app_key?.trim()) {
           appId = profile.shopee_app_key.trim()
+        }
+        if (profile?.shopee_app_secret?.trim()) {
           secret = profile.shopee_app_secret.trim()
         }
       } catch {}
