@@ -7,6 +7,7 @@ import MockupPreview from '../components/MockupPreview'
 import { calculateNextScheduleTime, loadQueue, saveQueue, createBackendSchedule, type ScheduledPost } from '../services/schedulerService'
 import { getGroups, sendTextMessage, sendMediaMessage, getRandomAntiBanDelay, delay, type WhatsAppGroup } from '../services/whatsappService'
 import { getDiscordChannels, sendDiscordMessage, type DiscordChannel } from '../services/discordService'
+import { sendInstagramPost } from '../services/instagramService'
 import ToneSelector from '../components/NewPost/ToneSelector'
 
 
@@ -49,6 +50,7 @@ export default function NewPost() {
   const [selectedTarget, setSelectedTarget] = useState<'all' | 'custom'>('custom')
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
   const [sendToTelegram, setSendToTelegram] = useState<boolean>(false)
+  const [sendToInstagram, setSendToInstagram] = useState<boolean>(false)
 
   const fetchWhatsAppGroups = async () => {
     setLoadingGroups(true)
@@ -264,7 +266,7 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
         targetGroupIds = selectedGroupIds
       }
 
-      if (targetGroupIds.length === 0 && selectedDiscordIds.length === 0 && !sendToTelegram) {
+      if (targetGroupIds.length === 0 && selectedDiscordIds.length === 0 && !sendToTelegram && !sendToInstagram) {
         setError('Selecione pelo menos um destino para disparo.')
         setSendingNow(false)
         return
@@ -312,6 +314,17 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
             })
           }
         }
+      }
+
+      // 3. Instagram Dispatch
+      if (sendToInstagram) {
+        if (!customImage) {
+          setError('O Instagram exige uma imagem para publicar no Feed.')
+          setSendingNow(false)
+          return
+        }
+        setAntiBanProgressMsg('Publicando no Feed do Instagram...')
+        await sendInstagramPost(customImage, copy)
       }
 
       setAntiBanProgressMsg(null)
@@ -396,8 +409,12 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
         channels.push({ type: 'telegram', targetId: 'all', targetName: 'Canal do Telegram' })
       }
 
+      if (sendToInstagram) {
+        channels.push({ type: 'instagram' as any, targetId: 'feed', targetName: 'Instagram Feed' })
+      }
+
       if (channels.length === 0) {
-        setError('Selecione pelo menos um destino (WhatsApp, Discord ou Telegram) para agendar.')
+        setError('Selecione pelo menos um destino (WhatsApp, Instagram, Discord ou Telegram) para agendar.')
         return
       }
 
@@ -893,6 +910,31 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
                 </span>
               </label>
             )}
+
+            {/* Option: Instagram Feed */}
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 14px',
+                borderRadius: 8,
+                background: sendToInstagram ? 'rgba(225,48,108,0.08)' : 'rgba(255,255,255,0.02)',
+                border: sendToInstagram ? '1px solid rgba(225,48,108,0.4)' : '1px solid #2a2a2a',
+                cursor: 'pointer',
+                marginTop: 4,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={sendToInstagram}
+                onChange={(e) => setSendToInstagram(e.target.checked)}
+              />
+              <span style={{ fontSize: 16 }}>📸</span>
+              <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 600 }}>
+                Postar também no Feed do Instagram
+              </span>
+            </label>
 
             {/* Option: Discord Webhooks */}
             {availableDiscordChannels.length > 0 && (

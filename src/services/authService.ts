@@ -11,6 +11,9 @@ export interface UserProfile {
   ai_model: string
   ollama_url?: string
   telegram_bot_token?: string
+  instagram_connected?: boolean
+  instagram_account_id?: string
+  instagram_username?: string
   shopee_app_key?: string
   shopee_app_secret?: string
   max_group_members: number

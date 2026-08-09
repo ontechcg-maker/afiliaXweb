@@ -2,6 +2,7 @@ import { supabaseAdmin, supabaseAnon } from '../config/supabase.js'
 import { EVOLUTION_BASE_URL } from '../config/env.js'
 import { getSystemConfig } from './systemConfigService.js'
 import { evolutionFetch, resolveTargetGroups } from './evolutionService.js'
+import { publishInstagramFeedPost } from './instagramService.js'
 import { incrementUserPostCount } from '../middlewares/limitMiddleware.js'
 
 export let schedulerRunning = false
@@ -87,11 +88,6 @@ export async function runScheduler() {
       }
     }
 
-    if (!instanceName || instanceStatus !== 'connected') {
-      console.warn(`[Scheduler] Agendamento ${schedule.id} ignorado: Nenhuma instância do WhatsApp conectada.`)
-      continue
-    }
-
     let channels = Array.isArray(schedule.channels) ? schedule.channels : []
     if (channels.length === 0) {
       channels = [{ type: 'whatsapp', targetId: 'all', targetName: 'Todos os Grupos' }]
@@ -100,7 +96,40 @@ export async function runScheduler() {
     let success = false
 
     for (const channel of channels) {
+      if (channel.type === 'instagram') {
+        if (schedule.user_id && offer.image_url) {
+          try {
+            const { data: igProfile } = await supabaseAdmin
+              .from('profiles')
+              .select('instagram_connected, instagram_account_id, instagram_access_token')
+              .eq('id', schedule.user_id)
+              .maybeSingle()
+
+            if (igProfile?.instagram_connected && igProfile?.instagram_account_id && igProfile?.instagram_access_token) {
+              await publishInstagramFeedPost({
+                accountId: igProfile.instagram_account_id,
+                accessToken: igProfile.instagram_access_token,
+                imageUrl: offer.image_url,
+                caption: offer.copy_text || offer.title || '',
+              })
+              success = true
+              console.log(`[Scheduler] Post no Instagram enviado para agendamento ${schedule.id}`)
+            } else {
+              console.warn(`[Scheduler] Instagram não configurado para o usuário ${schedule.user_id}`)
+            }
+          } catch (igErr) {
+            console.error(`[Scheduler] Erro no envio para Instagram:`, igErr.message)
+          }
+        }
+        continue
+      }
+
       if (channel.type !== 'whatsapp') continue
+
+      if (!instanceName || instanceStatus !== 'connected') {
+        console.warn(`[Scheduler] Agendamento ${schedule.id} ignorado no WhatsApp: Nenhuma instância conectada.`)
+        continue
+      }
 
       const targetIds = await resolveTargetGroups(instanceName, channel.targetId).catch(() => [])
 

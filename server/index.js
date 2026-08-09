@@ -10,6 +10,7 @@ import offerRoutes from './src/routes/offerRoutes.js'
 import aiRoutes from './src/routes/aiRoutes.js'
 import linkRoutes from './src/routes/linkRoutes.js'
 import whatsappRoutes from './src/routes/whatsappRoutes.js'
+import instagramRoutes from './src/routes/instagramRoutes.js'
 import healthRoutes from './src/routes/healthRoutes.js'
 
 const app = express()
@@ -31,6 +32,7 @@ apiRouter.use('/', offerRoutes)
 apiRouter.use('/', aiRoutes)
 apiRouter.use('/', linkRoutes)
 apiRouter.use('/whatsapp', whatsappRoutes)
+apiRouter.use('/instagram', instagramRoutes)
 
 // Suporte para Traefik / Stripprefix e chamadas diretas
 app.use('/api/api', apiRouter)

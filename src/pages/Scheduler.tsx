@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext'
 import { calculateHealthScore, formatScheduleTime, loadQueue, saveQueue, syncSchedulesWithBackend, deleteBackendSchedule, updateBackendScheduleTime } from '../services/schedulerService'
 import type { ScheduledPost } from '../services/schedulerService'
 import { sendTextMessage, sendMediaMessage } from '../services/whatsappService'
+import { sendInstagramPost } from '../services/instagramService'
 
 function formatForDateTimeInput(date: Date): string {
   const d = new Date(date)
@@ -80,6 +81,12 @@ export default function Scheduler() {
     try {
       // Envia para todos os canais configurados via backend
       for (const channel of post.channels) {
+        if (channel.type === 'instagram') {
+          if (post.imageUrl) {
+            await sendInstagramPost(post.imageUrl, post.copyText)
+          }
+          continue
+        }
         if (channel.type !== 'whatsapp') continue
         if (post.imageUrl) {
           await sendMediaMessage(channel.targetId, post.imageUrl, post.copyText, 'image')
@@ -394,7 +401,7 @@ export default function Scheduler() {
                       {post.title}
                     </p>
                     <p style={{ fontSize: 11, color: '#525252' }}>
-                      {post.channels.map((c) => `${c.type === 'whatsapp' ? '📱' : '✈️'} ${c.targetName}`).join(' · ')}
+                      {post.channels.map((c) => `${c.type === 'whatsapp' ? '📱' : c.type === 'instagram' ? '📸' : c.type === 'discord' ? '🎮' : '✈️'} ${c.targetName}`).join(' · ')}
                     </p>
                   </div>
 

@@ -16,6 +16,12 @@ import {
   sendDiscordMessage,
   type DiscordChannel,
 } from '../services/discordService'
+import {
+  getInstagramStatus,
+  connectInstagram,
+  disconnectInstagram,
+  type InstagramAccountStatus,
+} from '../services/instagramService'
 
 export default function Groups() {
   const { userProfile, refreshProfile } = useApp()
@@ -48,6 +54,66 @@ export default function Groups() {
   const [newDiscordWebhook, setNewDiscordWebhook] = useState('')
   const [testingDiscordId, setTestingDiscordId] = useState<string | null>(null)
   const [discordStatusMsg, setDiscordStatusMsg] = useState<{ id?: string; text: string; success: boolean } | null>(null)
+
+  // Instagram State
+  const [igStatus, setIgStatus] = useState<InstagramAccountStatus>({
+    connected: !!userProfile?.instagram_connected,
+    username: userProfile?.instagram_username || null,
+    accountId: userProfile?.instagram_account_id || null,
+  })
+  const [showConnectIg, setShowConnectIg] = useState(false)
+  const [igAccountId, setIgAccountId] = useState('')
+  const [igAccessToken, setIgAccessToken] = useState('')
+  const [loadingIg, setLoadingIg] = useState(false)
+  const [igError, setIgError] = useState<string | null>(null)
+  const [igSuccess, setIgSuccess] = useState<string | null>(null)
+
+  const checkIgStatus = async () => {
+    try {
+      const res = await getInstagramStatus()
+      setIgStatus(res)
+    } catch {}
+  }
+
+  useEffect(() => {
+    checkIgStatus()
+  }, [])
+
+  const handleConnectIg = async () => {
+    if (!igAccountId.trim() || !igAccessToken.trim()) return
+    setLoadingIg(true)
+    setIgError(null)
+    setIgSuccess(null)
+    try {
+      const res = await connectInstagram({
+        accountId: igAccountId.trim(),
+        accessToken: igAccessToken.trim(),
+      })
+      if (res.success && res.account) {
+        setIgSuccess(`✅ Conectado com sucesso à conta @${res.account.username}!`)
+        setIgStatus({ connected: true, username: res.account.username, accountId: res.account.id })
+        setShowConnectIg(false)
+        setIgAccountId('')
+        setIgAccessToken('')
+        refreshProfile()
+      }
+    } catch (e: any) {
+      setIgError(e.message || 'Erro ao conectar conta do Instagram.')
+    } finally {
+      setLoadingIg(false)
+    }
+  }
+
+  const handleDisconnectIg = async () => {
+    setLoadingIg(true)
+    try {
+      await disconnectInstagram()
+      setIgStatus({ connected: false })
+      refreshProfile()
+    } catch {} finally {
+      setLoadingIg(false)
+    }
+  }
 
   const handleCreateWhatsAppGroup = async () => {
     if (!newGroupName.trim()) return
@@ -769,6 +835,134 @@ export default function Groups() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* Seção Instagram */}
+      <div className="card animate-fade-in" style={{ marginTop: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, rgba(225,48,108,0.2), rgba(229,149,0,0.2))', border: '1px solid rgba(225,48,108,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 18 }}>📸</span>
+            </div>
+            <div>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                Instagram Graph API (Oficial)
+              </h3>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
+                Poste ofertas diretamente no Feed do Instagram Business/Creator
+              </p>
+            </div>
+          </div>
+
+          <div>
+            {igStatus.connected ? (
+              <button
+                onClick={handleDisconnectIg}
+                disabled={loadingIg}
+                className="btn-ghost"
+                style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,0.3)', fontSize: 12 }}
+              >
+                <LogOut size={13} style={{ marginRight: 4 }} /> Desconectar @{igStatus.username}
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowConnectIg(!showConnectIg)}
+                style={{
+                  background: 'linear-gradient(135deg, #e1306c, #f77737)',
+                  border: 'none', borderRadius: 8, color: '#fff',
+                  padding: '8px 14px', fontSize: 12, fontWeight: 600,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                <Plus size={14} /> {showConnectIg ? 'Cancelar' : 'Conectar Instagram'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {igSuccess && (
+          <div style={{ padding: '10px 14px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, color: '#22c55e', fontSize: 12, marginBottom: 14 }}>
+            {igSuccess}
+          </div>
+        )}
+
+        {igError && (
+          <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 12, marginBottom: 14 }}>
+            ⚠️ {igError}
+          </div>
+        )}
+
+        {/* Status de Conexão */}
+        {igStatus.connected && (
+          <div style={{ padding: 14, background: 'rgba(225,48,108,0.06)', border: '1px solid rgba(225,48,108,0.2)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <CheckCircle size={18} color="#e1306c" />
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                  Conta Conectada: @{igStatus.username}
+                </p>
+                <p style={{ fontSize: 11, color: '#a3a3a3', margin: 0 }}>
+                  ID da Conta: <code>{igStatus.accountId}</code>
+                </p>
+              </div>
+            </div>
+            <span style={{ fontSize: 11, background: 'rgba(34,197,94,0.15)', color: '#22c55e', padding: '3px 10px', borderRadius: 20, border: '1px solid rgba(34,197,94,0.3)', fontWeight: 600 }}>
+              Pronto para envios
+            </span>
+          </div>
+        )}
+
+        {/* Formulário de Conexão com Instagram */}
+        {showConnectIg && !igStatus.connected && (
+          <div style={{ background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: 10, padding: 16, marginTop: 12 }}>
+            <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+              Conectar Conta com Meta Graph API
+            </h4>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14 }}>
+              Informe o <b>Instagram Account ID</b> e o <b>User/Page Access Token</b> gerado no Meta for Developers.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Instagram Account ID</label>
+                <input
+                  type="text"
+                  placeholder="Ex: 17841400000000000"
+                  value={igAccountId}
+                  onChange={(e) => setIgAccountId(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: 13 }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Meta Access Token (Long-Lived)</label>
+                <textarea
+                  placeholder="EAA..."
+                  value={igAccessToken}
+                  onChange={(e) => setIgAccessToken(e.target.value)}
+                  rows={3}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'monospace' }}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+                <button className="btn-ghost" onClick={() => setShowConnectIg(false)} style={{ fontSize: 12 }}>
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleConnectIg}
+                  disabled={loadingIg || !igAccountId.trim() || !igAccessToken.trim()}
+                  style={{
+                    background: 'linear-gradient(135deg, #e1306c, #f77737)',
+                    border: 'none', borderRadius: 8, color: '#fff',
+                    padding: '8px 16px', fontSize: 12, fontWeight: 600,
+                    cursor: loadingIg || !igAccountId.trim() || !igAccessToken.trim() ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}
+                >
+                  {loadingIg ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : 'Validar e Salvar Conta'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
