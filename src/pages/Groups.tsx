@@ -925,14 +925,19 @@ export default function Groups() {
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
-                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Instagram Account ID</label>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                  Instagram Account ID <span style={{ color: '#22d3ee', fontStyle: 'italic', fontWeight: 400 }}>(ou digite "me")</span>
+                </label>
                 <input
                   type="text"
-                  placeholder="Ex: 17841400000000000"
+                  placeholder="Ex: 17841400000000000 ou digite 'me'"
                   value={igAccountId}
                   onChange={(e) => setIgAccountId(e.target.value)}
                   style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: 13 }}
                 />
+                <p style={{ fontSize: 10, color: '#a3a3a3', marginTop: 4 }}>
+                  💡 Dica: Se não souber seu ID numérico do Instagram Business, digite <b>me</b> e o sistema buscará automaticamente o ID da sua conta vinculada.
+                </p>
               </div>
               <div>
                 <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Meta Access Token (Long-Lived)</label>

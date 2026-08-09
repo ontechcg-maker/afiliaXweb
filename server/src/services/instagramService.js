@@ -13,8 +13,29 @@ export async function verifyInstagramAccount({ accountId, accessToken }) {
     throw new Error('ID da Conta do Instagram e Token de Acesso Meta são obrigatórios.')
   }
 
-  const cleanAccountId = accountId.trim()
+  let cleanAccountId = accountId.trim()
   const cleanToken = accessToken.trim()
+
+  // Se o ID informado for 'me' ou não for estritamente numérico, tenta obter a conta via /me/accounts
+  if (cleanAccountId.toLowerCase() === 'me' || !/^\d+$/.test(cleanAccountId)) {
+    try {
+      const meUrl = `${GRAPH_API_BASE}/me/accounts?fields=id,name,instagram_business_account&access_token=${encodeURIComponent(cleanToken)}`
+      const meRes = await fetch(meUrl)
+      const meData = await meRes.json().catch(() => ({}))
+
+      if (meData?.data && Array.isArray(meData.data) && meData.data.length > 0) {
+        const found = meData.data.find((acc) => acc.instagram_business_account?.id)
+        if (found?.instagram_business_account?.id) {
+          cleanAccountId = found.instagram_business_account.id
+        }
+      }
+    } catch {}
+  }
+
+  // Validação final de formato numérico do Instagram Business Account ID
+  if (!/^\d+$/.test(cleanAccountId)) {
+    throw new Error(`O "Instagram Account ID" deve ser o ID numérico da sua conta do Instagram Business (ex: 17841400000000000) ou simplesmente digite "me". O texto "${accountId}" não é um ID numérico válido.`)
+  }
 
   const url = `${GRAPH_API_BASE}/${cleanAccountId}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(cleanToken)}`
   const res = await fetch(url)
