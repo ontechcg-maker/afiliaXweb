@@ -82,24 +82,26 @@ export async function getSchedulesController(req, res) {
   try {
     if (!supabaseAdmin) return res.json([])
 
-    const { data: schedules, error: schedError } = await supabaseAdmin
+    const userId = req.user?.id
+
+    let { data: schedules, error: schedError } = await supabaseAdmin
       .from('schedules')
-      .select('*, offers(*)')
-      .or(`user_id.eq.${req.user.id},user_id.is.null`)
-      .order('scheduled_at', { ascending: true })
+      .select('id, offer_id, channels, scheduled_at, status, user_id, offers(id, title, copy_text, image_url, affiliate_link, url)')
+      .or(`user_id.eq.${userId},user_id.is.null`)
+      .order('scheduled_at', { ascending: false })
+      .limit(100)
 
-    if (schedError) console.error('[GET /schedules] Erro schedules:', schedError.message)
+    if (schedError) {
+      console.error('[GET /schedules] Erro schedules:', schedError.message)
+      const { data: fallbackSchedules } = await supabaseAdmin
+        .from('schedules')
+        .select('id, offer_id, channels, scheduled_at, status, user_id, offers(id, title, copy_text, image_url, affiliate_link, url)')
+        .eq('user_id', userId)
+        .order('scheduled_at', { ascending: false })
+        .limit(100)
 
-    const scheduleOfferIds = new Set((schedules || []).map((s) => s.offer_id).filter(Boolean))
-
-    const { data: offersOnly, error: offersError } = await supabaseAdmin
-      .from('offers')
-      .select('*')
-      .or(`user_id.eq.${req.user.id},user_id.is.null`)
-      .in('status', ['scheduled', 'pending'])
-      .order('created_at', { ascending: true })
-
-    if (offersError) console.error('[GET /schedules] Erro offers:', offersError.message)
+      if (fallbackSchedules) schedules = fallbackSchedules
+    }
 
     const formatted = (schedules || []).map((s) => ({
       id: s.id,
@@ -115,26 +117,25 @@ export async function getSchedulesController(req, res) {
       status: s.status === 'scheduled' ? 'pending' : (s.status || 'pending'),
     }))
 
-    if (offersOnly && offersOnly.length > 0) {
-      for (const off of offersOnly) {
-        if (!scheduleOfferIds.has(off.id)) {
-          formatted.push({
-            id: off.id,
-            offerId: off.id,
-            title: off.title || 'Oferta Agendada',
-            copyText: off.copy_text || '',
-            imageUrl: off.image_url || undefined,
-            affiliateLink: off.affiliate_link || off.url || '',
-            channels: [{ type: 'whatsapp', targetId: 'all', targetName: 'Todos os Grupos' }],
-            scheduledAt: off.created_at || new Date().toISOString(),
-            status: 'pending',
-          })
-        }
+    // Desduplica agendamentos por id ou offerId/título + janela de tempo
+    const uniqueFormatted = []
+    const seenKeys = new Set()
+
+    for (const item of formatted) {
+      const schedTimeMs = item.scheduledAt ? new Date(item.scheduledAt).getTime() : 0
+      const timeBlock = Math.round(schedTimeMs / 300_000) // blocos de 5 minutos
+      const titleKey = (item.title || '').trim().toLowerCase()
+      const dedupKey = item.id ? `sched_${item.id}` : (item.offerId ? `offer_${item.offerId}` : `title_${titleKey}_${timeBlock}`)
+
+      if (!seenKeys.has(dedupKey)) {
+        seenKeys.add(dedupKey)
+        uniqueFormatted.push(item)
       }
     }
 
-    res.json(formatted)
+    res.json(uniqueFormatted)
   } catch (e) {
+    console.error('[GET /schedules] Erro geral:', e.message)
     res.status(500).json({ error: e.message })
   }
 }

@@ -388,8 +388,9 @@ export async function syncSchedulesWithBackend(): Promise<ScheduledPost[]> {
       try {
         const { data: schedData } = await supabase
           .from('schedules')
-          .select('*, offers(*)')
-          .order('scheduled_at', { ascending: true })
+          .select('id, offer_id, channels, scheduled_at, status, user_id, offers(id, title, copy_text, image_url, affiliate_link, url)')
+          .order('scheduled_at', { ascending: false })
+          .limit(100)
 
         if (Array.isArray(schedData) && schedData.length > 0) {
           backendPosts = schedData.map((s: any) => {
@@ -411,41 +412,13 @@ export async function syncSchedulesWithBackend(): Promise<ScheduledPost[]> {
             }
           })
         }
-
-        // Também busca ofertas da tabela `offers` com status 'scheduled' ou 'pending'
-        const { data: offersData } = await supabase
-          .from('offers')
-          .select('*')
-          .in('status', ['scheduled', 'pending'])
-          .order('created_at', { ascending: true })
-
-        if (Array.isArray(offersData) && offersData.length > 0) {
-          const existingOfferIds = new Set(backendPosts.map((b) => b.offerId))
-          for (const off of offersData) {
-            if (!existingOfferIds.has(String(off.id))) {
-              const dateObj = off.created_at ? new Date(off.created_at) : new Date()
-              const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj
-              backendPosts.push({
-                id: String(off.id),
-                offerId: String(off.id),
-                title: String(off.title || 'Oferta Agendada'),
-                copyText: String(off.copy_text || ''),
-                imageUrl: off.image_url || undefined,
-                affiliateLink: String(off.affiliate_link || off.url || ''),
-                channels: [{ type: 'whatsapp', targetId: 'all', targetName: 'Todos os Grupos' }],
-                scheduledAt: validDate,
-                status: 'pending',
-              })
-            }
-          }
-        }
       } catch (e) {
         console.error('[Scheduler] Erro ao buscar via Supabase client:', e)
       }
     }
   }
 
-  // 3. Mescla posts locais com os do backend/database (com desduplicação e filtro de deletados)
+  // 3. Mescla posts do backend com a fila local (com desduplicação rigorosa e sem re-criar agendamentos no backend)
   const deletedSet = new Set(getDeletedScheduleIds())
   const postMap = new Map<string, ScheduledPost>()
 
@@ -459,25 +432,17 @@ export async function syncSchedulesWithBackend(): Promise<ScheduledPost[]> {
     if (deletedSet.has(localPost.id) || deletedSet.has(localPost.offerId)) {
       continue
     }
-    if (!postMap.has(localPost.id)) {
-      const isDuplicate = Array.from(postMap.values()).some(
-        (b) =>
-          b.title === localPost.title &&
-          Math.abs(new Date(b.scheduledAt).getTime() - new Date(localPost.scheduledAt).getTime()) < 120_000
-      )
-      if (!isDuplicate) {
-        postMap.set(localPost.id, localPost)
-        if (localPost.status === 'pending') {
-          createBackendSchedule({
-            title: localPost.title,
-            copyText: localPost.copyText,
-            imageUrl: localPost.imageUrl,
-            affiliateLink: localPost.affiliateLink,
-            channels: localPost.channels,
-            scheduledAt: localPost.scheduledAt,
-          }).catch(() => {})
-        }
-      }
+
+    const isDuplicate = Array.from(postMap.values()).some(
+      (b) =>
+        b.id === localPost.id ||
+        b.offerId === localPost.offerId ||
+        (b.title.trim().toLowerCase() === localPost.title.trim().toLowerCase() &&
+          Math.abs(new Date(b.scheduledAt).getTime() - new Date(localPost.scheduledAt).getTime()) < 300_000)
+    )
+
+    if (!isDuplicate && !postMap.has(localPost.id)) {
+      postMap.set(localPost.id, localPost)
     }
   }
 

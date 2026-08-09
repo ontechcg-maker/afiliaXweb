@@ -355,7 +355,11 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
   }
 
   const handleAddToQueue = async () => {
-    if (isScheduling || sendingNow || !copy.trim()) return
+    if (isScheduling || sendingNow) return
+    if (!copy.trim()) {
+      setError('Por favor, digite ou gere a copy da oferta antes de agendar para a fila.')
+      return
+    }
     setIsScheduling(true)
     setError(null)
     setSuccessMsg(null)
@@ -402,8 +406,30 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
 
       const tempId = String(Date.now())
 
-      // Salva a oferta e o agendamento no backend ou Supabase
-      const backendRes = await createBackendSchedule({
+      const newOfferPost: ScheduledPost = {
+        id: tempId,
+        offerId: tempId,
+        title: offerTitle,
+        copyText: copy,
+        imageUrl: customImage,
+        affiliateLink: affiliateLink,
+        channels,
+        scheduledAt: nextScheduledTime,
+        status: 'pending',
+      }
+
+      // 1. Atualização Otimista Instantânea na Fila Local
+      saveQueue([...existingQueue.filter((p) => p.id !== tempId), newOfferPost])
+
+      setSuccessMsg('🚀 Oferta agendada e adicionada à fila com sucesso!')
+
+      // 2. Transiciona para a aba Agendador em 300ms para resposta ultra-rápida
+      setTimeout(() => {
+        setActiveTab('scheduler')
+      }, 300)
+
+      // 3. Salva no banco de dados / backend em segundo plano sem travar a interface
+      createBackendSchedule({
         title: offerTitle,
         copyText: copy,
         imageUrl: customImage,
@@ -415,29 +441,19 @@ function buildAffiliateUrl(url: string, tag?: string, platform?: string): string
         coupon: product?.coupon,
         channels: channels,
         scheduledAt: nextScheduledTime,
+      }).then((backendRes) => {
+        if (backendRes?.scheduleId) {
+          const currentQueue = loadQueue()
+          const updatedQueue = currentQueue.map((p) =>
+            p.id === tempId
+              ? { ...p, id: backendRes.scheduleId!, offerId: backendRes.offerId || backendRes.scheduleId! }
+              : p
+          )
+          saveQueue(updatedQueue)
+        }
+      }).catch((e) => {
+        console.warn('[Scheduler] Erro ao sincronizar agendamento em segundo plano:', e)
       })
-
-      const finalId = backendRes?.scheduleId || tempId
-      const finalOfferId = backendRes?.offerId || tempId
-
-      const newOfferPost: ScheduledPost = {
-        id: finalId,
-        offerId: finalOfferId,
-        title: offerTitle,
-        copyText: copy,
-        imageUrl: customImage,
-        affiliateLink: affiliateLink,
-        channels,
-        scheduledAt: nextScheduledTime,
-        status: 'pending',
-      }
-
-      saveQueue([...existingQueue.filter((p) => p.id !== finalId), newOfferPost])
-
-      setSuccessMsg('🚀 Oferta agendada e adicionada à fila com sucesso!')
-      setTimeout(() => {
-        setActiveTab('scheduler')
-      }, 1200)
     } catch (err: any) {
       setError(err.message || 'Erro ao agendar para a fila.')
     } finally {
