@@ -117,7 +117,7 @@ export async function getSchedulesController(req, res) {
       status: s.status === 'scheduled' ? 'pending' : (s.status || 'pending'),
     }))
 
-    // Desduplica agendamentos por id ou offerId/título + janela de tempo
+    // Desduplica agendamentos por TÍTULO + JANELA DE TEMPO (5 min) para evitar duplicatas mesmo com IDs diferentes no DB
     const uniqueFormatted = []
     const seenKeys = new Set()
 
@@ -125,7 +125,7 @@ export async function getSchedulesController(req, res) {
       const schedTimeMs = item.scheduledAt ? new Date(item.scheduledAt).getTime() : 0
       const timeBlock = Math.round(schedTimeMs / 300_000) // blocos de 5 minutos
       const titleKey = (item.title || '').trim().toLowerCase()
-      const dedupKey = item.id ? `sched_${item.id}` : (item.offerId ? `offer_${item.offerId}` : `title_${titleKey}_${timeBlock}`)
+      const dedupKey = `${titleKey}_${timeBlock}`
 
       if (!seenKeys.has(dedupKey)) {
         seenKeys.add(dedupKey)
@@ -145,6 +145,30 @@ export async function createScheduleController(req, res) {
 
   try {
     if (!supabaseAdmin) return res.status(503).json({ error: 'Supabase não disponível.' })
+
+    // 1. Evita inserir duplicatas idênticas criadas no mesmo intervalo (10 min)
+    const cleanTitle = (title || '').trim().toLowerCase()
+    const { data: existingSchedules } = await supabaseAdmin
+      .from('schedules')
+      .select('id, offer_id, scheduled_at, offers(title)')
+      .eq('user_id', req.user.id)
+      .in('status', ['pending', 'scheduled'])
+      .order('scheduled_at', { ascending: false })
+      .limit(25)
+
+    if (existingSchedules && existingSchedules.length > 0) {
+      const isDup = existingSchedules.find((s) => {
+        const sTitle = (s.offers?.title || '').trim().toLowerCase()
+        const sTimeMs = s.scheduled_at ? new Date(s.scheduled_at).getTime() : 0
+        const reqTimeMs = scheduledAt ? new Date(scheduledAt).getTime() : Date.now()
+        return sTitle === cleanTitle && Math.abs(sTimeMs - reqTimeMs) < 600_000
+      })
+
+      if (isDup) {
+        console.log(`[CREATE /schedules] Evitando duplicata para "${title}" (já agendado: ${isDup.id})`)
+        return res.json({ success: true, scheduleId: isDup.id, offerId: isDup.offer_id, isDuplicate: true })
+      }
+    }
 
     const { data: offer, error: offerErr } = await supabaseAdmin
       .from('offers')
