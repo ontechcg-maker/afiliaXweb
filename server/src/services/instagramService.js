@@ -16,7 +16,7 @@ export async function verifyInstagramAccount({ accountId, accessToken }) {
   let cleanAccountId = accountId.trim()
   const cleanToken = accessToken.trim()
 
-  // Se o ID informado for 'me' ou não for estritamente numérico, tenta obter a conta via /me/accounts
+  // 1. Se o ID informado for 'me' ou não for numérico, tenta buscar a conta via /me/accounts
   if (cleanAccountId.toLowerCase() === 'me' || !/^\d+$/.test(cleanAccountId)) {
     try {
       const meUrl = `${GRAPH_API_BASE}/me/accounts?fields=id,name,instagram_business_account&access_token=${encodeURIComponent(cleanToken)}`
@@ -32,14 +32,30 @@ export async function verifyInstagramAccount({ accountId, accessToken }) {
     } catch {}
   }
 
-  // Validação final de formato numérico do Instagram Business Account ID
   if (!/^\d+$/.test(cleanAccountId)) {
     throw new Error(`O "Instagram Account ID" deve ser o ID numérico da sua conta do Instagram Business (ex: 17841400000000000) ou simplesmente digite "me". O texto "${accountId}" não é um ID numérico válido.`)
   }
 
-  const url = `${GRAPH_API_BASE}/${cleanAccountId}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(cleanToken)}`
-  const res = await fetch(url)
-  const data = await res.json().catch(() => ({}))
+  // 2. Tenta buscar diretamente os campos id,username,name (sem profile_picture_url para evitar erro #100 da Meta)
+  let url = `${GRAPH_API_BASE}/${cleanAccountId}?fields=id,username,name&access_token=${encodeURIComponent(cleanToken)}`
+  let res = await fetch(url)
+  let data = await res.json().catch(() => ({}))
+
+  // 3. Se deu erro ou se o ID informado era uma Página do Facebook, busca a instagram_business_account vinculada a ela
+  if (!res.ok || !data.username) {
+    try {
+      const pageUrl = `${GRAPH_API_BASE}/${cleanAccountId}?fields=id,name,instagram_business_account&access_token=${encodeURIComponent(cleanToken)}`
+      const pageRes = await fetch(pageUrl)
+      const pageData = await pageRes.json().catch(() => ({}))
+
+      if (pageData?.instagram_business_account?.id) {
+        cleanAccountId = pageData.instagram_business_account.id
+        url = `${GRAPH_API_BASE}/${cleanAccountId}?fields=id,username,name&access_token=${encodeURIComponent(cleanToken)}`
+        res = await fetch(url)
+        data = await res.json().catch(() => ({}))
+      }
+    } catch {}
+  }
 
   if (!res.ok || data.error) {
     const errorMsg = data?.error?.message || `Erro HTTP ${res.status} ao conectar com Meta Graph API.`
@@ -50,7 +66,7 @@ export async function verifyInstagramAccount({ accountId, accessToken }) {
     id: data.id,
     username: data.username || data.name || 'instagram_user',
     name: data.name || data.username || 'Conta Instagram',
-    profilePictureUrl: data.profile_picture_url || undefined,
+    profilePictureUrl: undefined,
   }
 }
 
