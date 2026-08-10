@@ -99,19 +99,45 @@ export async function publishInstagramFeedPost({ accountId, accessToken, imageUr
   const cleanAccountId = accountId.trim()
   const cleanToken = accessToken.trim()
 
+  // Tratamento de URL de imagem: Imagens da Shopee (cf.shopee.com.br) possuem proteção anti-hotlink do Cloudflare
+  // que bloqueiam o bot da Meta (code 36003). Usamos o proxy de imagem para a Meta conseguir baixar.
+  let targetImageUrl = imageUrl.trim()
+  if (targetImageUrl.includes('shopee.com') || targetImageUrl.includes('cf.shopee') || targetImageUrl.includes('shope.ee')) {
+    targetImageUrl = `https://images.weserv.nl/?url=${encodeURIComponent(targetImageUrl)}`
+  }
+
   // 1. Cria o container da mídia (POST /{account_id}/media)
   const containerUrl = `${GRAPH_API_BASE}/${cleanAccountId}/media`
-  const containerRes = await fetch(containerUrl, {
+  let containerRes = await fetch(containerUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      image_url: imageUrl,
+      image_url: targetImageUrl,
       caption: caption || '',
       access_token: cleanToken,
     }),
   })
 
-  const containerData = await containerRes.json().catch(() => ({}))
+  let containerData = await containerRes.json().catch(() => ({}))
+
+  // Fallback automático: Se falhou na busca da imagem pela Meta (code 36003 / Error fetching image), tenta novamente via proxy
+  if (
+    (!containerRes.ok || containerData.error) &&
+    !targetImageUrl.includes('weserv.nl')
+  ) {
+    const fallbackUrl = `https://images.weserv.nl/?url=${encodeURIComponent(imageUrl.trim())}`
+    containerRes = await fetch(containerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_url: fallbackUrl,
+        caption: caption || '',
+        access_token: cleanToken,
+      }),
+    })
+    containerData = await containerRes.json().catch(() => ({}))
+  }
+
   if (!containerRes.ok || containerData.error || !containerData.id) {
     const err = containerData?.error?.message || `Erro HTTP ${containerRes.status}`
     throw new Error(`Instagram Media Container: ${err}`)
