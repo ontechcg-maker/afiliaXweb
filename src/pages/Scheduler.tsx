@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Clock, Plus, Calendar, Zap, AlertTriangle, CheckCircle, Send, Trash2, Loader, RefreshCw, Edit3 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { calculateHealthScore, formatScheduleTime, loadQueue, saveQueue, syncSchedulesWithBackend, deleteBackendSchedule, updateBackendScheduleTime } from '../services/schedulerService'
+import { calculateHealthScore, formatScheduleTime, loadQueue, saveQueue, syncSchedulesWithBackend, deleteBackendSchedule, updateBackendScheduleTime, updateBackendScheduleStatus } from '../services/schedulerService'
 import type { ScheduledPost } from '../services/schedulerService'
 import { sendTextMessage, sendMediaMessage } from '../services/whatsappService'
 import { sendInstagramPost } from '../services/instagramService'
@@ -98,13 +98,17 @@ export default function Scheduler() {
       const updatedQueue = queue.map((p) => (p.id === post.id ? { ...p, status: 'sent' as const } : p))
       setQueue(updatedQueue)
       saveQueue(updatedQueue)
+
+      // Atualiza o status no backend (Supabase) para evitar re-disparo e marcar como ENVIADO
+      await updateBackendScheduleStatus(post.id, 'sent')
       
-      setSuccessMsg(`🚀 Oferta "${post.title.substring(0, 30)}..." enviada com sucesso!`)
+      setSuccessMsg(`🚀 Oferta "${post.title.substring(0, 30)}..." disparada agora! Status alterado para ENVIADO.`)
     } catch (err: any) {
       setErrorMsg(`Erro ao disparar: ${err.message}`)
       const updatedQueue = queue.map((p) => (p.id === post.id ? { ...p, status: 'failed' as const } : p))
       setQueue(updatedQueue)
       saveQueue(updatedQueue)
+      await updateBackendScheduleStatus(post.id, 'failed')
     } finally {
       setDispatchingId(null)
     }

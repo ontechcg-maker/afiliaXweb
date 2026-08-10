@@ -243,6 +243,37 @@ export async function updateScheduleTimeController(req, res) {
   }
 }
 
+export async function updateScheduleStatusController(req, res) {
+  const { status } = req.body || {}
+  try {
+    if (!supabaseAdmin) return res.status(503).json({ error: 'Supabase não disponível.' })
+
+    const newStatus = status || 'sent'
+    await supabaseAdmin
+      .from('schedules')
+      .update({ status: newStatus, sent_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id)
+
+    const { data: sched } = await supabaseAdmin
+      .from('schedules')
+      .select('offer_id')
+      .eq('id', req.params.id)
+      .maybeSingle()
+
+    if (sched?.offer_id) {
+      await supabaseAdmin
+        .from('offers')
+        .update({ status: newStatus })
+        .eq('id', sched.offer_id)
+    }
+
+    res.json({ success: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
 export async function triggerDueSchedulesController(_req, res) {
   try {
     const processedCount = await runScheduler()

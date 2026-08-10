@@ -9,6 +9,7 @@ import {
   createScheduleController,
   deleteScheduleController,
   updateScheduleTimeController,
+  updateScheduleStatusController,
   triggerDueSchedulesController,
 } from '../controllers/offerController.js'
 
@@ -24,6 +25,7 @@ router.get('/schedules', requireAuth, getSchedulesController)
 router.post('/schedules/create', requireAuth, createScheduleController)
 router.post('/schedules/:id/delete', requireAuth, deleteScheduleController)
 router.post('/schedules/:id/update-time', requireAuth, updateScheduleTimeController)
+router.post('/schedules/:id/update-status', requireAuth, updateScheduleStatusController)
 router.post('/schedules/trigger-due', requireAuth, triggerDueSchedulesController)
 
 export default router

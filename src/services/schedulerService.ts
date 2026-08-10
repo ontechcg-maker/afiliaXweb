@@ -433,6 +433,11 @@ export async function syncSchedulesWithBackend(): Promise<ScheduledPost[]> {
       continue
     }
 
+    const backendItem = postMap.get(localPost.id)
+    if (backendItem && localPost.status === 'sent') {
+      backendItem.status = 'sent'
+    }
+
     const isDuplicate = Array.from(postMap.values()).some(
       (b) =>
         b.id === localPost.id ||
@@ -449,6 +454,33 @@ export async function syncSchedulesWithBackend(): Promise<ScheduledPost[]> {
   const merged = Array.from(postMap.values())
   saveQueue(merged)
   return merged
+}
+
+/**
+ * Atualiza o status do agendamento (ex: de 'pending' para 'sent') no banco via Backend API ou Supabase direto
+ */
+export async function updateBackendScheduleStatus(id: string, status: 'sent' | 'failed' | 'pending'): Promise<void> {
+  try {
+    const headers = await getAuthHeaders()
+    await fetch(`/api/schedules/${id}/update-status`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ status }),
+    })
+  } catch (e) {
+    console.error('[Scheduler] Erro ao atualizar status no backend:', e)
+  }
+
+  const supabase = getSupabaseClient()
+  if (supabase) {
+    try {
+      await supabase.from('schedules').update({ status, sent_at: new Date().toISOString() }).eq('id', id)
+      const { data: sched } = await supabase.from('schedules').select('offer_id').eq('id', id).maybeSingle()
+      if (sched?.offer_id) {
+        await supabase.from('offers').update({ status }).eq('id', sched.offer_id)
+      }
+    } catch {}
+  }
 }
 
 /**

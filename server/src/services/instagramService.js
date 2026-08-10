@@ -16,6 +16,18 @@ export async function verifyInstagramAccount({ accountId, accessToken }) {
   let cleanAccountId = accountId.trim()
   const cleanToken = accessToken.trim()
 
+  // Pré-validação rápida do formato do token
+  if (!cleanToken.startsWith('EAA') || cleanToken.length < 40) {
+    if (cleanToken.startsWith('IGAA') || cleanToken.startsWith('IGQV')) {
+      throw new Error(
+        'Você gerou um Token de Acesso do Instagram (iniciado por "IGAA..."). Para publicar posts via API Oficial da Meta, você deve gerar um User/Page Access Token da Meta Graph API (que começa com "EAA...").'
+      )
+    }
+    throw new Error(
+      'Token de Acesso Meta inválido. Os Tokens de Acesso da Meta Graph API começam obrigatoriamente com "EAA...".'
+    )
+  }
+
   // 1. Se o ID informado for 'me' ou não for numérico, tenta buscar a conta via /me/accounts
   if (cleanAccountId.toLowerCase() === 'me' || !/^\d+$/.test(cleanAccountId)) {
     try {
@@ -58,7 +70,10 @@ export async function verifyInstagramAccount({ accountId, accessToken }) {
   }
 
   if (!res.ok || data.error) {
-    const errorMsg = data?.error?.message || `Erro HTTP ${res.status} ao conectar com Meta Graph API.`
+    let errorMsg = data?.error?.message || `Erro HTTP ${res.status} ao conectar com Meta Graph API.`
+    if (errorMsg.includes('Cannot parse access token') || errorMsg.includes('Invalid OAuth access token')) {
+      errorMsg = 'Token de Acesso da Meta inválido ou malformatado. Certifique-se de que copiou o User ou Page Access Token gerado no Meta for Developers (iniciando com "EAA...").'
+    }
     throw new Error(`Meta Graph API: ${errorMsg}`)
   }
 

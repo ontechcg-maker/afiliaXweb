@@ -942,12 +942,15 @@ export default function Groups() {
               <div>
                 <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Meta Access Token (Long-Lived)</label>
                 <textarea
-                  placeholder="EAA..."
+                  placeholder="Ex: EAAGm0PX4ZK..."
                   value={igAccessToken}
                   onChange={(e) => setIgAccessToken(e.target.value)}
                   rows={3}
                   style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'monospace' }}
                 />
+                <p style={{ fontSize: 10, color: '#a3a3a3', marginTop: 4 }}>
+                  💡 Atenção: O Token de Acesso da Meta sempre começa com <b>EAA...</b> e é uma chave longa (gerada no Graph API Explorer do Meta for Developers). Não cole o <i>App Secret</i> ou <i>App ID</i>.
+                </p>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
                 <button className="btn-ghost" onClick={() => setShowConnectIg(false)} style={{ fontSize: 12 }}>

@@ -94,9 +94,13 @@ export async function runScheduler() {
     }
 
     let success = false
+    let hasInstagramChannel = false
+    let instagramSuccess = false
 
     for (const channel of channels) {
       if (channel.type === 'instagram') {
+        hasInstagramChannel = true
+
         if (schedule.user_id && offer.image_url) {
           try {
             const { data: igProfile } = await supabaseAdmin
@@ -112,13 +116,44 @@ export async function runScheduler() {
                 imageUrl: offer.image_url,
                 caption: offer.copy_text || offer.title || '',
               })
+              instagramSuccess = true
               success = true
               console.log(`[Scheduler] Post no Instagram enviado para agendamento ${schedule.id}`)
             } else {
               console.warn(`[Scheduler] Instagram não configurado para o usuário ${schedule.user_id}`)
+              // Salva erro no banco para rastreabilidade
+              await supabaseAdmin
+                .from('schedules')
+                .update({ error_message: 'Instagram não conectado ou credenciais ausentes.' })
+                .eq('id', schedule.id)
             }
           } catch (igErr) {
             console.error(`[Scheduler] Erro no envio para Instagram:`, igErr.message)
+
+            // Fix #3: Persiste a mensagem de erro no banco
+            await supabaseAdmin
+              .from('schedules')
+              .update({ error_message: igErr.message || 'Erro desconhecido ao postar no Instagram.' })
+              .eq('id', schedule.id)
+              .catch(() => {})
+
+            // Fix #2: Se o token expirou, desconecta a conta automaticamente
+            const isTokenError =
+              igErr.message?.includes('access token') ||
+              igErr.message?.includes('Session has expired') ||
+              igErr.message?.includes('Invalid OAuth access token') ||
+              igErr.message?.includes('Error validating')
+
+            if (isTokenError && schedule.user_id) {
+              await supabaseAdmin
+                .from('profiles')
+                .update({ instagram_connected: false })
+                .eq('id', schedule.user_id)
+                .catch(() => {})
+              console.warn(
+                `[Scheduler] Token do Instagram expirado para usuário ${schedule.user_id} — conta desconectada automaticamente.`
+              )
+            }
           }
         }
         continue
@@ -166,7 +201,16 @@ export async function runScheduler() {
       }
     }
 
-    const newStatus = success ? 'sent' : 'failed'
+    // Fix #1: Se o único canal era Instagram e ele falhou, status = 'failed'
+    // Não basta checar `success` globalmente; canais Instagram têm rastreamento próprio
+    const onlyInstagram = hasInstagramChannel && channels.every((c) => c.type === 'instagram')
+    let newStatus
+    if (onlyInstagram) {
+      newStatus = instagramSuccess ? 'sent' : 'failed'
+    } else {
+      newStatus = success ? 'sent' : 'failed'
+    }
+
     await supabaseAdmin
       .from('schedules')
       .update({ status: newStatus, sent_at: new Date().toISOString() })
@@ -181,14 +225,14 @@ export async function runScheduler() {
       } catch {}
     }
 
-    if (success && schedule.user_id) {
+    if (newStatus === 'sent' && schedule.user_id) {
       try {
         await incrementUserPostCount(schedule.user_id)
       } catch {}
     }
 
     totalProcessed++
-    console.log(`[Scheduler] Post ${schedule.id} → ${success ? '✅ enviado com sucesso' : '❌ falhou no envio'}`)
+    console.log(`[Scheduler] Post ${schedule.id} → ${newStatus === 'sent' ? '✅ enviado com sucesso' : '❌ falhou no envio'}`)
   }
 
   return totalProcessed
