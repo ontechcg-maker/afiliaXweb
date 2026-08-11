@@ -42,9 +42,10 @@ export async function resolveTargetGroups(instanceName, groupId) {
     ).catch(() => null)
     const list = Array.isArray(groupData) ? groupData
       : groupData?.groups || groupData?.response || groupData?.data || []
-    return list
+    const ids = list
       .map((g) => g.id || g.jid || g.groupJid || '')
       .filter((id) => id.includes('@g.us'))
+    return Array.from(new Set(ids))
   }
   const target = groupId.includes('@') ? groupId : `${groupId}@g.us`
   return [target]

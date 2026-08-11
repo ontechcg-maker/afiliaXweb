@@ -6,8 +6,14 @@ import { publishInstagramFeedPost } from './instagramService.js'
 import { incrementUserPostCount } from '../middlewares/limitMiddleware.js'
 
 export let schedulerRunning = false
+let isSchedulerExecuting = false
 
 export async function runScheduler() {
+  if (isSchedulerExecuting) {
+    console.log('[Scheduler] Execução em andamento ignorada para evitar concorrência.')
+    return 0
+  }
+
   if (!supabaseAdmin) {
     console.warn('[Scheduler] Supabase Admin não configurado — scheduler pausado.')
     return 0
@@ -20,32 +26,49 @@ export async function runScheduler() {
     return 0
   }
 
-  const now = new Date().toISOString()
-
-  const { data: duePosts, error } = await supabaseAdmin
-    .from('schedules')
-    .select('*, offers(*)')
-    .in('status', ['pending', 'scheduled'])
-    .lte('scheduled_at', now)
-
-  if (error) {
-    console.error('[Scheduler] Erro ao buscar agendamentos:', error.message)
-    return 0
-  }
-
-  if (!duePosts || duePosts.length === 0) {
-    return 0
-  }
-
-  console.log(`[Scheduler] Processando ${duePosts.length} post(s) agendado(s)...`)
+  isSchedulerExecuting = true
   let totalProcessed = 0
 
-  for (const schedule of duePosts) {
-    const offer = schedule.offers
-    if (!offer) {
-      console.warn(`[Scheduler] Agendamento ${schedule.id} sem oferta vinculada — pulando.`)
-      continue
+  try {
+    const now = new Date().toISOString()
+
+    const { data: duePosts, error } = await supabaseAdmin
+      .from('schedules')
+      .select('*, offers(*)')
+      .in('status', ['pending', 'scheduled'])
+      .lte('scheduled_at', now)
+
+    if (error) {
+      console.error('[Scheduler] Erro ao buscar agendamentos:', error.message)
+      return 0
     }
+
+    if (!duePosts || duePosts.length === 0) {
+      return 0
+    }
+
+    console.log(`[Scheduler] Processando ${duePosts.length} post(s) agendado(s)...`)
+
+    for (const schedule of duePosts) {
+      // Trava atômica no banco: altera o status para 'processing' antes de disparar.
+      // Se outra requisição tentar processar o mesmo ID, esta atualização retornará 0 linhas.
+      const { data: locked, error: lockErr } = await supabaseAdmin
+        .from('schedules')
+        .update({ status: 'processing' })
+        .eq('id', schedule.id)
+        .in('status', ['pending', 'scheduled'])
+        .select('id')
+
+      if (lockErr || !locked || locked.length === 0) {
+        console.log(`[Scheduler] Agendamento ${schedule.id} já está sendo processado por outra rotina. Pulando.`)
+        continue
+      }
+
+      const offer = schedule.offers
+      if (!offer) {
+        console.warn(`[Scheduler] Agendamento ${schedule.id} sem oferta vinculada — pulando.`)
+        continue
+      }
 
     let instanceName = null
     let instanceStatus = 'disconnected'
@@ -237,6 +260,9 @@ export async function runScheduler() {
   }
 
   return totalProcessed
+  } finally {
+    isSchedulerExecuting = false
+  }
 }
 
 export async function keepAliveSupabase() {
