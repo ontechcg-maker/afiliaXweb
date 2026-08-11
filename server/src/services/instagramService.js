@@ -139,7 +139,10 @@ export async function publishInstagramFeedPost({ accountId, accessToken, imageUr
   }
 
   if (!containerRes.ok || containerData.error || !containerData.id) {
-    const err = containerData?.error?.message || `Erro HTTP ${containerRes.status}`
+    let err = containerData?.error?.message || `Erro HTTP ${containerRes.status}`
+    if (err.includes('Session has expired') || err.includes('Error validating access token') || err.includes('Invalid OAuth access token')) {
+      err = 'O Token de Acesso da Meta expirou. Por favor, vá em Redes Sociais / Grupos e gerencie sua conexão com o Instagram informando um novo Meta Access Token.'
+    }
     throw new Error(`Instagram Media Container: ${err}`)
   }
 
@@ -158,7 +161,10 @@ export async function publishInstagramFeedPost({ accountId, accessToken, imageUr
 
   const publishData = await publishRes.json().catch(() => ({}))
   if (!publishRes.ok || publishData.error || !publishData.id) {
-    const err = publishData?.error?.message || `Erro HTTP ${publishRes.status}`
+    let err = publishData?.error?.message || `Erro HTTP ${publishRes.status}`
+    if (err.includes('Session has expired') || err.includes('Error validating access token') || err.includes('Invalid OAuth access token')) {
+      err = 'O Token de Acesso da Meta expirou. Por favor, vá em Redes Sociais / Grupos e gerencie sua conexão com o Instagram informando um novo Meta Access Token.'
+    }
     throw new Error(`Instagram Publish: ${err}`)
   }
 

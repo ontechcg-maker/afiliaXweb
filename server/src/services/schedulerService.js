@@ -142,7 +142,8 @@ export async function runScheduler() {
               igErr.message?.includes('access token') ||
               igErr.message?.includes('Session has expired') ||
               igErr.message?.includes('Invalid OAuth access token') ||
-              igErr.message?.includes('Error validating')
+              igErr.message?.includes('Error validating') ||
+              igErr.message?.includes('expirou')
 
             if (isTokenError && schedule.user_id) {
               await supabaseAdmin
